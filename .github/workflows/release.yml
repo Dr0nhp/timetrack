@@ -36,14 +36,15 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           TAG="${GITHUB_REF_NAME}"
-          SIG_FILE="target/release/bundle/macos/TimeTrack.app.tar.gz.sig"
+          BUNDLE="src-tauri/target/release/bundle/macos"
+          SIG_FILE="${BUNDLE}/TimeTrack.app.tar.gz.sig"
           bash scripts/generate-latest-json.sh "$VERSION" "$TAG" "$SIG_FILE" "TimeTrack.app.tar.gz"
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/bundle/macos/TimeTrack.app.tar.gz
-            target/release/bundle/macos/TimeTrack.app.tar.gz.sig
-            target/release/bundle/dmg/TimeTrack_*_aarch64.dmg
+            src-tauri/target/release/bundle/macos/TimeTrack.app.tar.gz
+            src-tauri/target/release/bundle/macos/TimeTrack.app.tar.gz.sig
+            src-tauri/target/release/bundle/dmg/TimeTrack_*_aarch64.dmg
             latest.json
