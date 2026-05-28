@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::{params, Connection};
 use thiserror::Error;
 
@@ -125,15 +125,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn activities_for_day(&self, day: chrono::NaiveDate) -> Result<Vec<Activity>, DbError> {
-        let start = day.and_hms_opt(0, 0, 0).unwrap().and_utc().to_rfc3339();
-        let end = day
-            .succ_opt()
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .to_rfc3339();
+    pub fn activities_for_day(&self, day: NaiveDate) -> Result<Vec<Activity>, DbError> {
+        let (start, end) = local_day_bounds_utc(day)?;
 
         let mut stmt = self.conn.prepare(
             "
@@ -145,7 +138,7 @@ impl Database {
             ",
         )?;
 
-        let rows = stmt.query_map(params![start, end], |row| {
+        let rows = stmt.query_map(params![start.to_rfc3339(), end.to_rfc3339()], |row| {
             Ok(Activity {
                 id: row.get(0)?,
                 started_at: parse_ts_sql(row.get::<_, String>(1)?)?,
@@ -176,30 +169,58 @@ impl Database {
         Ok(self.conn.execute("DELETE FROM activities", [])?)
     }
 
-    pub fn delete_activities_for_day(&self, day: chrono::NaiveDate) -> Result<usize, DbError> {
-        let start = day.and_hms_opt(0, 0, 0).unwrap().and_utc().to_rfc3339();
-        let end = day
-            .succ_opt()
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .to_rfc3339();
-
+    pub fn delete_activities_for_day(&self, day: NaiveDate) -> Result<usize, DbError> {
+        let (start, end) = local_day_bounds_utc(day)?;
         let deleted = self.conn.execute(
             "DELETE FROM activities WHERE started_at >= ?1 AND started_at < ?2",
-            params![start, end],
+            params![start.to_rfc3339(), end.to_rfc3339()],
         )?;
         Ok(deleted)
     }
 
-    pub fn total_duration_for_day(&self, day: chrono::NaiveDate) -> Result<i64, DbError> {
+    pub fn total_duration_for_day(
+        &self,
+        day: NaiveDate,
+        now: DateTime<Utc>,
+    ) -> Result<i64, DbError> {
         Ok(self
             .activities_for_day(day)?
             .iter()
-            .map(|a| a.duration_secs)
+            .map(|activity| activity.duration_secs_at(now))
             .sum())
     }
+
+    pub fn has_rich_activity_context(&self) -> Result<bool, DbError> {
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT 1
+            FROM activities
+            WHERE window_title != '' OR url IS NOT NULL OR page_title IS NOT NULL
+            LIMIT 1
+            ",
+        )?;
+        let mut rows = stmt.query([])?;
+        Ok(rows.next()?.is_some())
+    }
+}
+
+fn local_day_bounds_utc(day: NaiveDate) -> Result<(DateTime<Utc>, DateTime<Utc>), DbError> {
+    let start = local_naive_to_utc(day.and_hms_opt(0, 0, 0).unwrap())?;
+    let end = local_naive_to_utc(
+        day.succ_opt()
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+    )?;
+    Ok((start, end))
+}
+
+fn local_naive_to_utc(dt: NaiveDateTime) -> Result<DateTime<Utc>, DbError> {
+    Local
+        .from_local_datetime(&dt)
+        .single()
+        .ok_or_else(|| DbError::InvalidTimestamp(format!("ambiguous local time: {dt}")))
+        .map(|local| local.with_timezone(&Utc))
 }
 
 fn parse_ts(value: String) -> Result<DateTime<Utc>, DbError> {
@@ -254,7 +275,7 @@ mod tests {
         db.close_segment(id, started + chrono::Duration::seconds(60))
             .unwrap();
 
-        let day = started.date_naive();
+        let day = Local::now().date_naive();
         let activities = db.activities_for_day(day).unwrap();
         assert_eq!(activities.len(), 1);
         assert_eq!(activities[0].app_name, "Zed");
@@ -265,6 +286,7 @@ mod tests {
     fn stores_browser_and_idle_fields() {
         let db = Database::open_in_memory().unwrap();
         let started = Utc.with_ymd_and_hms(2026, 5, 28, 14, 0, 0).unwrap();
+        let day = started.with_timezone(&Local).date_naive();
 
         let browser = ActivitySnapshot {
             app_name: "Chrome".into(),
@@ -288,36 +310,59 @@ mod tests {
         db.close_segment(idle_id, started + chrono::Duration::seconds(90))
             .unwrap();
 
-        let activities = db
-            .activities_for_day(started.date_naive())
-            .unwrap();
+        let activities = db.activities_for_day(day).unwrap();
         assert_eq!(activities.len(), 2);
         assert_eq!(activities[0].context.url.as_deref(), Some("https://github.com"));
         assert!(activities[1].is_idle);
     }
 
     #[test]
-    fn filters_activities_by_day() {
+    fn filters_activities_by_local_day() {
         let db = Database::open_in_memory().unwrap();
-        let day1 = Utc.with_ymd_and_hms(2026, 5, 27, 23, 30, 0).unwrap();
-        let day2 = Utc.with_ymd_and_hms(2026, 5, 28, 8, 0, 0).unwrap();
+        let day1 = NaiveDate::from_ymd_opt(2026, 5, 27).unwrap();
+        let day2 = NaiveDate::from_ymd_opt(2026, 5, 28).unwrap();
+        let day1_ts = Local
+            .from_local_datetime(&day1.and_hms_opt(23, 30, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+        let day2_ts = Local
+            .from_local_datetime(&day2.and_hms_opt(8, 0, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
 
-        let id1 = db.insert_segment(&snapshot("Slack", "com.slack"), day1).unwrap();
-        db.close_segment(id1, day1 + chrono::Duration::minutes(10))
+        let id1 = db.insert_segment(&snapshot("Slack", "com.slack"), day1_ts).unwrap();
+        db.close_segment(id1, day1_ts + chrono::Duration::minutes(10))
             .unwrap();
 
-        let id2 = db.insert_segment(&snapshot("Zed", "dev.zed.Zed"), day2).unwrap();
-        db.close_segment(id2, day2 + chrono::Duration::minutes(5))
+        let id2 = db.insert_segment(&snapshot("Zed", "dev.zed.Zed"), day2_ts).unwrap();
+        db.close_segment(id2, day2_ts + chrono::Duration::minutes(5))
             .unwrap();
 
-        assert_eq!(
-            db.activities_for_day(day1.date_naive()).unwrap().len(),
-            1
-        );
-        assert_eq!(
-            db.activities_for_day(day2.date_naive()).unwrap().len(),
-            1
-        );
+        assert_eq!(db.activities_for_day(day1).unwrap().len(), 1);
+        assert_eq!(db.activities_for_day(day2).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn early_morning_belongs_to_local_today_not_yesterday() {
+        let db = Database::open_in_memory().unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 5, 28).unwrap();
+        let yesterday = today.pred_opt().unwrap();
+        let started = Local
+            .from_local_datetime(&today.and_hms_opt(0, 15, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let id = db
+            .insert_segment(&snapshot("Zed", "dev.zed.Zed"), started)
+            .unwrap();
+        db.close_segment(id, started + chrono::Duration::minutes(30))
+            .unwrap();
+
+        assert_eq!(db.activities_for_day(today).unwrap().len(), 1);
+        assert!(db.activities_for_day(yesterday).unwrap().is_empty());
     }
 
     #[test]
@@ -339,7 +384,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            db.total_duration_for_day(start.date_naive()).unwrap(),
+            db.total_duration_for_day(
+                start.with_timezone(&Local).date_naive(),
+                start + chrono::Duration::seconds(250)
+            )
+            .unwrap(),
             250
         );
     }
@@ -353,29 +402,40 @@ mod tests {
             .unwrap();
 
         db.delete_all().unwrap();
-        assert!(db.activities_for_day(start.date_naive()).unwrap().is_empty());
+        assert!(db
+            .activities_for_day(start.with_timezone(&Local).date_naive())
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
     fn delete_activities_for_day_only_removes_matching_day() {
         let db = Database::open_in_memory().unwrap();
-        let day1 = Utc.with_ymd_and_hms(2026, 5, 27, 10, 0, 0).unwrap();
-        let day2 = Utc.with_ymd_and_hms(2026, 5, 28, 10, 0, 0).unwrap();
+        let day1 = NaiveDate::from_ymd_opt(2026, 5, 27).unwrap();
+        let day2 = NaiveDate::from_ymd_opt(2026, 5, 28).unwrap();
+        let day1_ts = Local
+            .from_local_datetime(&day1.and_hms_opt(10, 0, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
+        let day2_ts = Local
+            .from_local_datetime(&day2.and_hms_opt(10, 0, 0).unwrap())
+            .single()
+            .unwrap()
+            .with_timezone(&Utc);
 
-        let id1 = db.insert_segment(&snapshot("Slack", "com.slack"), day1).unwrap();
-        db.close_segment(id1, day1 + chrono::Duration::minutes(5))
+        let id1 = db.insert_segment(&snapshot("Slack", "com.slack"), day1_ts).unwrap();
+        db.close_segment(id1, day1_ts + chrono::Duration::minutes(5))
             .unwrap();
 
-        let id2 = db.insert_segment(&snapshot("Zed", "dev.zed.Zed"), day2).unwrap();
-        db.close_segment(id2, day2 + chrono::Duration::minutes(5))
+        let id2 = db.insert_segment(&snapshot("Zed", "dev.zed.Zed"), day2_ts).unwrap();
+        db.close_segment(id2, day2_ts + chrono::Duration::minutes(5))
             .unwrap();
 
-        let deleted = db
-            .delete_activities_for_day(day1.date_naive())
-            .unwrap();
+        let deleted = db.delete_activities_for_day(day1).unwrap();
         assert_eq!(deleted, 1);
-        assert!(db.activities_for_day(day1.date_naive()).unwrap().is_empty());
-        assert_eq!(db.activities_for_day(day2.date_naive()).unwrap().len(), 1);
+        assert!(db.activities_for_day(day1).unwrap().is_empty());
+        assert_eq!(db.activities_for_day(day2).unwrap().len(), 1);
     }
 
     #[test]
@@ -391,7 +451,9 @@ mod tests {
         }
 
         let db = Database::open(&path).unwrap();
-        let activities = db.activities_for_day(start.date_naive()).unwrap();
+        let activities = db
+            .activities_for_day(start.with_timezone(&Local).date_naive())
+            .unwrap();
         assert_eq!(activities.len(), 1);
         assert!(activities[0].ended_at.is_some());
         assert!(activities[0].duration_secs >= 0);

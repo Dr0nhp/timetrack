@@ -8,6 +8,7 @@ use timetrack_core::{
 };
 use timetrack_monitor::{capture_snapshot, idle_seconds};
 use tracing::{error, warn};
+use tauri::{AppHandle, Emitter};
 
 use crate::state::AppState;
 
@@ -16,13 +17,13 @@ pub struct TrackerHandle {
 }
 
 impl TrackerHandle {
-    pub fn start(state: Arc<Mutex<AppState>>) -> Self {
-        let thread = thread::spawn(move || tracker_loop(state));
+    pub fn start(state: Arc<Mutex<AppState>>, app: AppHandle) -> Self {
+        let thread = thread::spawn(move || tracker_loop(state, app));
         Self { _thread: thread }
     }
 }
 
-fn tracker_loop(state: Arc<Mutex<AppState>>) {
+fn tracker_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
     let mut segments = SegmentTracker::new();
 
     loop {
@@ -43,7 +44,7 @@ fn tracker_loop(state: Arc<Mutex<AppState>>) {
         };
 
         if !paused {
-            match tick(&state, &mut segments, idle_timeout) {
+            match tick(&state, &mut segments, idle_timeout, &app) {
                 Ok(()) => {}
                 Err(err) => warn!("tracker tick failed: {err}"),
             }
@@ -57,6 +58,7 @@ fn tick(
     state: &Arc<Mutex<AppState>>,
     segments: &mut SegmentTracker,
     idle_timeout_secs: u64,
+    app: &AppHandle,
 ) -> Result<(), String> {
     let now = Utc::now();
     let snapshot = build_snapshot(idle_timeout_secs);
@@ -80,6 +82,9 @@ fn tick(
         .insert_segment(&snapshot, now)
         .map_err(|e| e.to_string())?;
     segments.on_segment_opened(id, snapshot, now);
+
+    drop(guard);
+    let _ = app.emit("timeline-changed", ());
 
     Ok(())
 }

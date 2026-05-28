@@ -89,6 +89,13 @@ impl Activity {
             self.is_idle
         )
     }
+
+    pub fn duration_secs_at(&self, now: DateTime<Utc>) -> i64 {
+        match self.ended_at {
+            Some(_) => self.duration_secs,
+            None => (now - self.started_at).num_seconds().max(0),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

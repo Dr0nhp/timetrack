@@ -6,9 +6,9 @@ mod update;
 use std::sync::{Arc, Mutex};
 
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -33,17 +33,23 @@ pub fn run() {
 
             let db_path = data_dir.join("timeline.db");
             let state = Arc::new(Mutex::new(AppState::new(db_path)?));
-            let _tracker = TrackerHandle::start(Arc::clone(&state));
+            let _tracker = TrackerHandle::start(Arc::clone(&state), app.handle().clone());
 
             app.manage(state);
 
             setup_tray(app)?;
+            setup_app_menu(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
             }
 
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id.as_ref() == "check_updates" {
+                let _ = app.emit("menu-check-updates", ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_activities,
@@ -60,6 +66,27 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running timetrack");
+}
+
+fn setup_app_menu(app: &tauri::App) -> tauri::Result<()> {
+    let handle = app.handle();
+    let menu = Menu::default(handle)?;
+    let check_updates = MenuItem::with_id(
+        handle,
+        "check_updates",
+        "Nach Updates suchen…",
+        true,
+        None::<&str>,
+    )?;
+
+    if let Some(MenuItemKind::Submenu(help_menu)) = menu.get(HELP_SUBMENU_ID) {
+        help_menu.append(&check_updates)?;
+        #[cfg(target_os = "macos")]
+        help_menu.set_as_help_menu_for_nsapp()?;
+    }
+
+    app.set_menu(menu)?;
+    Ok(())
 }
 
 fn setup_tray(app: &tauri::App) -> tauri::Result<()> {

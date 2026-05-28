@@ -1,14 +1,19 @@
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 
 const timelineEl = document.getElementById("timeline");
 const emptyStateEl = document.getElementById("empty-state");
 const totalLabelEl = document.getElementById("total-label");
 const dayLabelEl = document.getElementById("day-label");
 const permissionBannerEl = document.getElementById("permission-banner");
+const permissionBannerPathEl = document.getElementById("permission-banner-path");
+const permissionBannerHintEl = document.getElementById("permission-banner-hint");
 const pauseBtn = document.getElementById("pause-btn");
 const dayPickerEl = document.getElementById("day-picker");
 
+const REFRESH_INTERVAL_MS = 2000;
 const BUCKET_MINUTES = 15;
+let refreshTimer = null;
 
 let selectedDateIso = isoToday();
 let trackingPaused = false;
@@ -234,7 +239,7 @@ function buildBuckets(activities) {
 
 function appColor(appName, isIdle) {
   if (isIdle) {
-    return "var(--idle)";
+    return "hsl(var(--idle))";
   }
 
   let hash = 0;
@@ -349,6 +354,13 @@ async function refresh() {
     permissionBannerEl.classList.add("hidden");
   } else {
     permissionBannerEl.classList.remove("hidden");
+    if (status.app_binary_path) {
+      permissionBannerPathEl.textContent = status.app_binary_path;
+      const isDevBuild = status.app_binary_path.includes("/target/debug/");
+      permissionBannerHintEl.textContent = isDevBuild
+        ? "Dev-Modus: In den Systemeinstellungen timetrack aktivieren (nicht Cursor). Danach App beenden und neu starten."
+        : "In den Systemeinstellungen unter Bedienungshilfen TimeTrack aktivieren und danach neu starten.";
+    }
   }
 }
 
@@ -370,8 +382,6 @@ dayPickerEl.addEventListener("change", async () => {
   await refresh();
 });
 
-document.getElementById("refresh-btn").addEventListener("click", refresh);
-
 document.getElementById("request-access-btn").addEventListener("click", async () => {
   await invoke("request_accessibility");
   await refresh();
@@ -391,11 +401,7 @@ document.getElementById("hook-btn").addEventListener("click", async () => {
   alert(message);
 });
 
-document.getElementById("check-update-btn").addEventListener("click", async () => {
-  const btn = document.getElementById("check-update-btn");
-  btn.disabled = true;
-  btn.textContent = "Suche…";
-
+async function checkForUpdates() {
   try {
     const result = await invoke("check_for_updates");
     if (!result.available) {
@@ -409,16 +415,39 @@ document.getElementById("check-update-btn").addEventListener("click", async () =
         `Update ${result.version} ist verfügbar.${notes}\n\nJetzt herunterladen und installieren? Die App startet danach neu.`
       )
     ) {
-      btn.textContent = "Installiere…";
       await invoke("install_update");
     }
   } catch (err) {
     alert(`Update fehlgeschlagen: ${err}`);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Nach Updates suchen";
+  }
+}
+
+listen("menu-check-updates", () => {
+  checkForUpdates();
+});
+
+listen("timeline-changed", () => {
+  if (!document.hidden) {
+    refresh();
   }
 });
+
+function syncAutoRefresh() {
+  if (document.hidden) {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+    return;
+  }
+
+  if (!refreshTimer) {
+    refresh();
+    refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
+  }
+}
+
+document.addEventListener("visibilitychange", syncAutoRefresh);
 
 document.getElementById("delete-day-btn").addEventListener("click", async () => {
   const label = formatDayLabelShort(selectedDateIso);
@@ -453,5 +482,4 @@ document.getElementById("delete-all-btn").addEventListener("click", async () => 
 
 syncDayPickerLimits();
 setSelectedDate(selectedDateIso);
-refresh();
-setInterval(refresh, 5000);
+syncAutoRefresh();

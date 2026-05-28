@@ -1,7 +1,7 @@
 use std::fs;
 use std::sync::{Arc, Mutex};
 
-use chrono::{Local, NaiveDate};
+use chrono::{Local, NaiveDate, Utc};
 use serde::Serialize;
 use timetrack_core::{
     merge_consecutive_activities,
@@ -39,6 +39,32 @@ pub struct TrackerStatus {
     pub idle_timeout_secs: u64,
     pub total_today_secs: i64,
     pub total_today_label: String,
+    pub app_binary_path: String,
+}
+
+fn accessibility_effective(db: &timetrack_core::Database) -> bool {
+    if is_accessibility_trusted() {
+        return true;
+    }
+
+    if db.has_rich_activity_context().unwrap_or(false) {
+        return true;
+    }
+
+    match timetrack_monitor::capture_snapshot() {
+        Ok(snapshot) => {
+            !snapshot.window_title.is_empty()
+                || snapshot.url.is_some()
+                || snapshot.page_title.is_some()
+        }
+        Err(_) => false,
+    }
+}
+
+fn current_binary_path() -> String {
+    std::env::current_exe()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default()
 }
 
 fn format_duration(secs: i64) -> String {
@@ -99,13 +125,19 @@ pub fn get_activities(
 ) -> Result<Vec<ActivityDto>, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
     let day = parse_day(day)?;
+    let now = Utc::now();
 
-    let activities = merge_consecutive_activities(
-        guard
-            .db
-            .activities_for_day(day)
-            .map_err(|e| e.to_string())?,
-    );
+    let mut activities = guard
+        .db
+        .activities_for_day(day)
+        .map_err(|e| e.to_string())?;
+    for activity in &mut activities {
+        if activity.ended_at.is_none() {
+            activity.duration_secs = activity.duration_secs_at(now);
+        }
+    }
+
+    let activities = merge_consecutive_activities(activities);
 
     Ok(activities
         .into_iter()
@@ -136,17 +168,19 @@ pub fn get_tracker_status(
 ) -> Result<TrackerStatus, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
     let day = parse_day(day)?;
+    let now = Utc::now();
     let total = guard
         .db
-        .total_duration_for_day(day)
+        .total_duration_for_day(day, now)
         .map_err(|e| e.to_string())?;
 
     Ok(TrackerStatus {
-        accessibility_granted: is_accessibility_trusted(),
+        accessibility_granted: accessibility_effective(&guard.db),
         tracking_paused: guard.settings.tracking_paused,
         idle_timeout_secs: guard.settings.idle_timeout_secs,
         total_today_secs: total,
         total_today_label: format_duration(total),
+        app_binary_path: current_binary_path(),
     })
 }
 

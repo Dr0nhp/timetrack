@@ -1,6 +1,6 @@
 //! Integration tests for the full tracking flow (snapshot → enrich → segment → db).
 
-use chrono::{TimeZone, Utc};
+use chrono::{Local, TimeZone, Utc};
 use timetrack_core::{
     parser::enrich_snapshot, ActivityContext, ActivitySnapshot, Database, SegmentTracker,
 };
@@ -66,7 +66,9 @@ fn full_workday_simulation() {
         db.close_segment(open_id, end).unwrap();
     }
 
-    let activities = db.activities_for_day(base.date_naive()).unwrap();
+    let activities = db
+        .activities_for_day(base.with_timezone(&Local).date_naive())
+        .unwrap();
     assert_eq!(activities.len(), 3);
 
     assert_eq!(activities[0].app_name, "Zed");
@@ -108,7 +110,9 @@ fn same_app_different_urls_create_separate_segments() {
     }
 
     assert_eq!(
-        db.activities_for_day(t0.date_naive()).unwrap().len(),
+        db.activities_for_day(t0.with_timezone(&Local).date_naive())
+            .unwrap()
+            .len(),
         2
     );
 }

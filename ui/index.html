@@ -15,7 +15,6 @@
         </div>
         <div class="header-actions">
           <span class="total" id="total-label">0 Min</span>
-          <button id="refresh-btn" class="btn secondary">Aktualisieren</button>
         </div>
       </header>
 
@@ -27,10 +26,11 @@
             Browser-Tabs zu erfassen. Ohne diese Berechtigung werden nur App-Namen
             gespeichert.
           </p>
-          <p class="banner-hint">
-            Dev-Modus: In den Systemeinstellungen <strong>timetrack</strong> aktivieren
-            (nicht Cursor). Danach App beenden und neu starten.
+          <p class="banner-hint" id="permission-banner-hint">
+            In den Systemeinstellungen unter Bedienungshilfen diese App aktivieren
+            und danach neu starten.
           </p>
+          <p class="banner-path" id="permission-banner-path"></p>
         </div>
         <div class="banner-actions">
           <button id="request-access-btn" class="btn">Berechtigung anfragen</button>
@@ -45,8 +45,7 @@
           <button class="chip active" data-day="today">Heute</button>
           <button class="chip" data-day="yesterday">Gestern</button>
           <label class="date-picker">
-            <span class="date-picker-label">Datum</span>
-            <input type="date" id="day-picker" />
+            <input type="date" id="day-picker" aria-label="Datum" title="Datum" />
           </label>
         </div>
         <button id="pause-btn" class="btn secondary">Tracking pausieren</button>
@@ -59,9 +58,6 @@
           Aktivitäten werden lokal in SQLite gespeichert und nicht automatisch gelöscht.
         </p>
         <div class="data-panel-actions">
-          <button id="check-update-btn" class="btn secondary">
-            Nach Updates suchen
-          </button>
           <button id="delete-day-btn" class="btn danger secondary">
             Ausgewählten Tag löschen
           </button>
