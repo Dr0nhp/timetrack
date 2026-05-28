@@ -2,7 +2,7 @@ pub mod browser;
 pub mod terminal;
 pub mod zed;
 
-use crate::models::{ActivityContext, ActivitySnapshot};
+use crate::models::ActivitySnapshot;
 
 const ZED_BUNDLE_IDS: &[&str] = &["dev.zed.Zed", "dev.zed.Zed-Preview"];
 const TERMINAL_BUNDLE_IDS: &[&str] = &[
@@ -36,12 +36,21 @@ pub fn enrich_snapshot(mut snapshot: ActivitySnapshot) -> ActivitySnapshot {
         snapshot.context.url = browser::normalize_url(url);
     }
 
+    if let Some(label) = browser::display_label(
+        snapshot.context.url.as_deref(),
+        snapshot.context.page_title.as_deref(),
+        &snapshot.window_title,
+    ) {
+        snapshot.context.page_title = Some(label);
+    }
+
     snapshot
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::ActivityContext;
 
     #[test]
     fn enriches_zed_snapshot() {
@@ -89,6 +98,27 @@ mod tests {
         assert_eq!(
             enriched.context.url.as_deref(),
             Some("https://github.com/user/repo")
+        );
+    }
+
+    #[test]
+    fn enriches_gmail_chat_with_contact_name() {
+        let snapshot = ActivitySnapshot {
+            app_name: "Safari".into(),
+            app_bundle_id: "com.apple.Safari".into(),
+            window_title: "Bob Smith - Gmail".into(),
+            context: ActivityContext {
+                url: Some("https://mail.google.com/mail/u/0/#chat/dm/5dErPSAAAAE".into()),
+                page_title: Some("Bob Smith - Gmail".into()),
+                ..Default::default()
+            },
+            is_idle: false,
+        };
+
+        let enriched = enrich_snapshot(snapshot);
+        assert_eq!(
+            enriched.context.page_title.as_deref(),
+            Some("Google Chat · Bob Smith")
         );
     }
 

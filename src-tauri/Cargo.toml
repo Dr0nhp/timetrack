@@ -14,11 +14,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 timetrack-core = { path = "../crates/core" }
 timetrack-monitor = { path = "../crates/monitor" }
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-shell = "2"
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+thiserror.workspace = true
 dirs = "6"

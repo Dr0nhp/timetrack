@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use timetrack_core::{Database, TrackerSettings};
 
@@ -12,16 +11,15 @@ pub enum StateError {
 pub struct AppState {
     pub db: Database,
     pub settings: TrackerSettings,
-    pub db_path: PathBuf,
 }
 
 impl AppState {
     pub fn new(db_path: PathBuf) -> Result<Self, StateError> {
+        tracing::info!("database opened at {}", db_path.display());
         let db = Database::open(&db_path)?;
         Ok(Self {
             db,
             settings: TrackerSettings::default(),
-            db_path,
         })
     }
 }

@@ -63,7 +63,8 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show_i, &pause_i, &quit_i])?;
 
     let _tray = TrayIconBuilder::new()
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(tauri::include_image!("icons/tray-icon.png"))
+        .icon_as_template(true)
         .menu(&menu)
         .tooltip("TimeTrack")
         .on_menu_event(|app, event| match event.id.as_ref() {

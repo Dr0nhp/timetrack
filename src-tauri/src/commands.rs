@@ -3,7 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{Local, NaiveDate};
 use serde::Serialize;
-use timetrack_core::parser::terminal::hook_install_script;
+use timetrack_core::{
+    merge_consecutive_activities,
+    parser::terminal::hook_install_script,
+};
 use timetrack_monitor::{
     is_accessibility_trusted, open_accessibility_settings, request_accessibility_prompt,
 };
@@ -72,6 +75,12 @@ fn build_subtitle(activity: &timetrack_core::Activity) -> String {
         return format!("Branch: {branch}");
     }
 
+    if let Some(page_title) = &activity.context.page_title {
+        if !page_title.is_empty() {
+            return page_title.clone();
+        }
+    }
+
     if let Some(url) = &activity.context.url {
         return url.clone();
     }
@@ -91,10 +100,12 @@ pub fn get_activities(
     let guard = state.lock().map_err(|e| e.to_string())?;
     let day = parse_day(day)?;
 
-    let activities = guard
-        .db
-        .activities_for_day(day)
-        .map_err(|e| e.to_string())?;
+    let activities = merge_consecutive_activities(
+        guard
+            .db
+            .activities_for_day(day)
+            .map_err(|e| e.to_string())?,
+    );
 
     Ok(activities
         .into_iter()

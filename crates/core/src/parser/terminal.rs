@@ -22,8 +22,6 @@ pub struct TerminalContext {
 struct HookLine {
     cwd: Option<String>,
     branch: Option<String>,
-    #[serde(default)]
-    ts: i64,
 }
 
 pub fn parse_terminal_title(title: &str) -> Option<TerminalContext> {

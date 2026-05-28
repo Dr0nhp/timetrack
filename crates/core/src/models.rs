@@ -73,6 +73,24 @@ pub struct Activity {
     pub is_idle: bool,
 }
 
+impl Activity {
+    /// Same key as [`ActivitySnapshot::signature`] — used to merge timeline rows.
+    pub fn grouping_key(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            self.app_name,
+            self.app_bundle_id,
+            self.window_title,
+            self.context.url.as_deref().unwrap_or(""),
+            self.context.page_title.as_deref().unwrap_or(""),
+            self.context.project.as_deref().unwrap_or(""),
+            self.context.file.as_deref().unwrap_or(""),
+            self.context.git_branch.as_deref().unwrap_or(""),
+            self.is_idle
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackerSettings {
     pub idle_timeout_secs: u64,

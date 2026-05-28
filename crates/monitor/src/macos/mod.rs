@@ -1,9 +1,11 @@
 mod accessibility;
+mod bundle_id;
 mod workspace;
 
 pub use accessibility::permissions;
 
 use thiserror::Error;
+use tracing;
 
 use crate::snapshot::RawSnapshot;
 
@@ -14,6 +16,10 @@ pub enum MacMonitorError {
 }
 
 pub fn capture_snapshot() -> Result<RawSnapshot, MacMonitorError> {
+    capture_snapshot_inner()
+}
+
+fn capture_snapshot_inner() -> Result<RawSnapshot, MacMonitorError> {
     let app = workspace::frontmost_app()?;
     let trusted = permissions::is_trusted();
 
@@ -23,16 +29,22 @@ pub fn capture_snapshot() -> Result<RawSnapshot, MacMonitorError> {
 
     if trusted {
         if let Some(window) = accessibility::focused_window_for_pid(app.pid) {
-            window_title = window.title.unwrap_or_default();
-            page_title = window.title.clone();
+            window_title = window.title.clone().unwrap_or_default();
+            page_title = window.title;
+        }
 
-            if let Some(browser) = accessibility::browser_info(&app.bundle_id, app.pid, &window_title) {
+        if !app.bundle_id.is_empty() {
+            if let Some(browser) =
+                accessibility::browser_info(&app.bundle_id, app.pid, &window_title)
+            {
                 url = browser.url;
                 if browser.title.is_some() {
                     page_title = browser.title;
                 }
             }
         }
+    } else {
+        tracing::debug!("accessibility not granted — window title and URL skipped");
     }
 
     Ok(RawSnapshot {
@@ -42,4 +54,8 @@ pub fn capture_snapshot() -> Result<RawSnapshot, MacMonitorError> {
         url,
         page_title,
     })
+}
+
+pub fn idle_seconds() -> f64 {
+    accessibility::idle::seconds_since_last_input()
 }

@@ -53,7 +53,7 @@ pub fn request_accessibility_prompt() -> bool {
 pub fn idle_seconds() -> f64 {
     #[cfg(target_os = "macos")]
     {
-        macos::accessibility::idle::seconds_since_last_input()
+        macos::idle_seconds()
     }
 
     #[cfg(not(target_os = "macos"))]

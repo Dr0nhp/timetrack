@@ -1,6 +1,29 @@
 use chrono::{DateTime, Utc};
 
-use crate::models::ActivitySnapshot;
+use crate::models::{Activity, ActivitySnapshot};
+
+/// Merges consecutive activities that share the same [`Activity::grouping_key`].
+pub fn merge_consecutive_activities(activities: Vec<Activity>) -> Vec<Activity> {
+    if activities.is_empty() {
+        return activities;
+    }
+
+    let mut merged = Vec::with_capacity(activities.len());
+    let mut current = activities[0].clone();
+
+    for next in activities.into_iter().skip(1) {
+        if current.grouping_key() == next.grouping_key() {
+            current.duration_secs += next.duration_secs;
+            current.ended_at = next.ended_at;
+        } else {
+            merged.push(current);
+            current = next;
+        }
+    }
+
+    merged.push(current);
+    merged
+}
 
 pub struct SegmentTracker {
     current_id: Option<i64>,
@@ -58,7 +81,7 @@ impl Default for SegmentTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ActivityContext, ActivitySnapshot};
+    use crate::models::{Activity, ActivityContext, ActivitySnapshot};
 
     fn sample(app: &str, title: &str) -> ActivitySnapshot {
         ActivitySnapshot {
@@ -77,10 +100,10 @@ mod tests {
         let b = sample("Chrome", "GitHub");
 
         assert!(tracker.should_start_new_segment(&a));
-        assert!(!tracker.should_start_new_segment(&a));
 
         let mut tracker = tracker;
-        tracker.on_segment_opened(1, a, Utc::now());
+        tracker.on_segment_opened(1, a.clone(), Utc::now());
+        assert!(!tracker.should_start_new_segment(&a));
         assert!(tracker.should_start_new_segment(&b));
     }
 
@@ -162,5 +185,73 @@ mod tests {
         let closed = tracker.on_segment_closed(Utc::now());
         assert_eq!(closed, Some(42));
         assert_eq!(tracker.current_segment_id(), None);
+    }
+
+    fn activity(
+        id: i64,
+        app: &str,
+        title: &str,
+        duration_secs: i64,
+        ctx: ActivityContext,
+    ) -> Activity {
+        Activity {
+            id,
+            started_at: Utc::now(),
+            ended_at: Some(Utc::now()),
+            duration_secs,
+            app_name: app.into(),
+            app_bundle_id: format!("com.{app}"),
+            window_title: title.into(),
+            context: ctx,
+            is_idle: false,
+        }
+    }
+
+    #[test]
+    fn merge_consecutive_same_app_and_title() {
+        let merged = merge_consecutive_activities(vec![
+            activity(1, "Zed", "main.rs", 120, ActivityContext::default()),
+            activity(2, "Zed", "main.rs", 180, ActivityContext::default()),
+        ]);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].duration_secs, 300);
+        assert_eq!(merged[0].id, 1);
+    }
+
+    #[test]
+    fn merge_does_not_cross_different_apps() {
+        let merged = merge_consecutive_activities(vec![
+            activity(1, "Zed", "main.rs", 60, ActivityContext::default()),
+            activity(2, "Safari", "Web", 30, ActivityContext::default()),
+            activity(3, "Zed", "main.rs", 90, ActivityContext::default()),
+        ]);
+
+        assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn merge_splits_on_title_change() {
+        let merged = merge_consecutive_activities(vec![
+            activity(1, "Zed", "a.rs", 60, ActivityContext::default()),
+            activity(2, "Zed", "b.rs", 90, ActivityContext::default()),
+        ]);
+
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn merge_splits_on_url_change() {
+        let mut ctx_a = ActivityContext::default();
+        ctx_a.url = Some("https://a.com".into());
+        let mut ctx_b = ActivityContext::default();
+        ctx_b.url = Some("https://b.com".into());
+
+        let merged = merge_consecutive_activities(vec![
+            activity(1, "Chrome", "Tab", 60, ctx_a),
+            activity(2, "Chrome", "Tab", 90, ctx_b),
+        ]);
+
+        assert_eq!(merged.len(), 2);
     }
 }

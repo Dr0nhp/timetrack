@@ -10,9 +10,10 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSRunningApplication", "NSWorkspace"] }
-objc2-foundation = { version = "0.3", features = ["NSString", "NSBundle"] }
+objc2 = { version = "0.6", features = ["catch-all"] }
 core-foundation = "0.10"
 core-graphics = "0.24"
 accessibility-sys = "0.2"
+plist = "1"
+serde = { workspace = true, features = ["derive"] }
+libc = "0.2"

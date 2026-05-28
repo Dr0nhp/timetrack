@@ -27,7 +27,14 @@ fn tracker_loop(state: Arc<Mutex<AppState>>) {
 
     loop {
         let (poll_ms, idle_timeout, paused) = {
-            let guard = state.lock().expect("state lock");
+            let guard = match state.lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    warn!("app state lock poisoned");
+                    thread::sleep(Duration::from_millis(1500));
+                    continue;
+                }
+            };
             (
                 guard.settings.poll_interval_ms,
                 guard.settings.idle_timeout_secs,
@@ -36,8 +43,9 @@ fn tracker_loop(state: Arc<Mutex<AppState>>) {
         };
 
         if !paused {
-            if let Err(err) = tick(&state, &mut segments, idle_timeout) {
-                warn!("tracker tick failed: {err}");
+            match tick(&state, &mut segments, idle_timeout) {
+                Ok(()) => {}
+                Err(err) => warn!("tracker tick failed: {err}"),
             }
         }
 
@@ -58,7 +66,7 @@ fn tick(
         return Ok(());
     }
 
-    let mut guard = state.lock().map_err(|e| e.to_string())?;
+    let guard = state.lock().map_err(|e| e.to_string())?;
 
     if let Some(open_id) = segments.on_segment_closed(now) {
         guard

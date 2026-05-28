@@ -27,13 +27,11 @@
     "active": true,
     "targets": "all",
     "icon": [
+      "icons/icon.icns",
       "icons/icon.png"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15",
-      "infoPlist": {
-        "NSAppleEventsUsageDescription": "TimeTrack needs accessibility access to record which apps and browser tabs you use."
-      }
+      "minimumSystemVersion": "10.15"
     }
   }
 }

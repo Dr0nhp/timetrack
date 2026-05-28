@@ -72,7 +72,7 @@ impl Database {
             UPDATE activities
             SET ended_at = ?1,
                 duration_secs = CAST(
-                    (julianday(?1) - julianday(started_at)) * 86400 AS INTEGER
+                    (strftime('%s', ?1) - strftime('%s', started_at)) AS INTEGER
                 )
             WHERE ended_at IS NULL
             ",
@@ -116,7 +116,7 @@ impl Database {
             UPDATE activities
             SET ended_at = ?1,
                 duration_secs = CAST(
-                    (julianday(?1) - julianday(started_at)) * 86400 AS INTEGER
+                    (strftime('%s', ?1) - strftime('%s', started_at)) AS INTEGER
                 )
             WHERE id = ?2
             ",
@@ -148,10 +148,10 @@ impl Database {
         let rows = stmt.query_map(params![start, end], |row| {
             Ok(Activity {
                 id: row.get(0)?,
-                started_at: parse_ts(row.get::<_, String>(1)?)?,
+                started_at: parse_ts_sql(row.get::<_, String>(1)?)?,
                 ended_at: row
                     .get::<_, Option<String>>(2)?
-                    .map(parse_ts)
+                    .map(parse_ts_sql)
                     .transpose()?,
                 duration_secs: row.get(3)?,
                 app_name: row.get(4)?,
@@ -169,7 +169,7 @@ impl Database {
             })
         })?;
 
-        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     pub fn delete_all(&self) -> Result<(), DbError> {
@@ -190,6 +190,16 @@ fn parse_ts(value: String) -> Result<DateTime<Utc>, DbError> {
     DateTime::parse_from_rfc3339(&value)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|_| DbError::InvalidTimestamp(value))
+}
+
+fn parse_ts_sql(value: String) -> Result<DateTime<Utc>, rusqlite::Error> {
+    parse_ts(value).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(e),
+        )
+    })
 }
 
 #[cfg(test)]
