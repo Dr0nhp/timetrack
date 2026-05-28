@@ -13,17 +13,12 @@ pub fn normalize_url(url: &str) -> Option<String> {
     }
 }
 
-pub fn display_host(url: &str) -> String {
-    url.trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .split('/')
-        .next()
-        .unwrap_or(url)
-        .to_string()
-}
-
 /// Human-readable label for browser tabs (e.g. Google Chat contact name).
-pub fn display_label(url: Option<&str>, page_title: Option<&str>, window_title: &str) -> Option<String> {
+pub fn display_label(
+    url: Option<&str>,
+    page_title: Option<&str>,
+    window_title: &str,
+) -> Option<String> {
     let url = url?;
     if !is_gmail_chat_url(url) {
         return None;
@@ -100,14 +95,6 @@ mod tests {
         assert_eq!(normalize_url(""), None);
         assert_eq!(normalize_url("   "), None);
         assert_eq!(normalize_url("not a url"), None);
-    }
-
-    #[test]
-    fn display_host_strips_scheme_and_path() {
-        assert_eq!(
-            display_host("https://github.com/user/repo/pull/1"),
-            "github.com"
-        );
     }
 
     #[test]

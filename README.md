@@ -92,12 +92,14 @@ Die App erscheint in der **Menüleiste** (Tray-Icon).
 |--------|-----------|
 | Linksklick auf Tray-Icon | Timeline-Fenster öffnen/schließen |
 | Rechtsklick / Menü | Timeline öffnen, Tracking pausieren, Beenden |
-| **Heute / Gestern** | Tag in der Timeline wechseln |
+| **Heute / Gestern / Datum** | Tag in der Timeline wechseln |
+| **15-Min-Übersicht** | Tagesbalken mit App-Anteilen, aufklappbar |
 | **Tracking pausieren** | Erfassung vorübergehend stoppen |
 | **Terminal-Hook** | Installiert `~/.timetrack/hook.sh` + Anleitung |
-| **Daten löschen** | Gesamte Timeline unwiderruflich leeren |
+| **Daten verwalten** | Tag oder alle Daten löschen |
+| **Hilfe → Nach Updates suchen** | OTA-Update (Release-Builds) |
 
-Die Timeline zeigt pro Eintrag: Uhrzeit, App-Name, Kontext (Projekt, URL, Branch) und Dauer.
+Die Timeline aktualisiert sich automatisch (alle 2 s, sofort bei App-Wechsel).
 
 ---
 
@@ -143,7 +145,11 @@ cargo test -p timetrack-core --test timeline_flow
 cargo test -p timetrack-monitor
 ```
 
-> **Hinweis:** Der gesamte macOS-Teil (Monitor, Tauri-App) wurde bisher **noch nicht auf einem Mac kompiliert oder getestet**. Siehe [`TODO_AGENT.md`](TODO_AGENT.md) für offene Aufgaben.
+---
+
+## Releases & Updates
+
+Siehe [`RELEASE.md`](RELEASE.md) für Tag-Push, GitHub Actions und OTA-Updates.
 
 ---
 
@@ -204,41 +210,29 @@ timetrack/
 ├── crates/monitor/     # macOS Activity Capture (Accessibility, Idle)
 ├── src-tauri/          # Tauri-App, Tracker-Service, Menüleisten-Icon
 ├── ui/                 # Timeline-Frontend (Vanilla JS, Deutsch)
-├── AGENT_BRIEF.md      # Ursprüngliche Spezifikation
-└── TODO_AGENT.md       # Offene Aufgaben für macOS-Fertigstellung
+├── RELEASE.md          # Release- & Update-Anleitung
+└── README.md
 ```
 
 ---
 
 ## Bekannte Einschränkungen
 
-- **macOS only** im MVP
+- **macOS only**
 - Browser-URL-Extraktion kann bei Browser-Updates brechen
 - Git-Branch aus Terminal-Titel ist heuristisch — Hook ist zuverlässiger
 - Nur der **aktive** Browser-Tab, nicht alle offenen Tabs
-- App-Icon ist ein Platzhalter
-- Noch **nicht auf macOS verifiziert** (Build + manuelle Tests ausstehend)
+- Updates: manuell über **Hilfe → Nach Updates suchen** (kein Auto-Check beim Start)
 
 ---
 
 ## Roadmap
 
-- [ ] Smart Grouping nach Domain (z.B. `github.com` statt voller URL)
-- [ ] CSV/JSON-Export für Abrechnung
+- [ ] Auto-Update-Check beim App-Start
 - [ ] Auto-Start beim Login (LaunchAgent)
+- [ ] CSV/JSON-Export
 - [ ] Ausschlussliste für Apps/URLs
-- [ ] App-Icons in der Timeline
 - [ ] Suche/Filter in der Timeline
-- [ ] Windows/Linux-Port
-
----
-
-## Weitere Dokumente
-
-| Datei | Inhalt |
-|-------|--------|
-| [`TODO_AGENT.md`](TODO_AGENT.md) | Was auf macOS noch getan werden muss |
-| [`AGENT_BRIEF.md`](AGENT_BRIEF.md) | Vollständige technische Spezifikation |
 
 ---
 

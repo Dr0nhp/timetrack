@@ -127,7 +127,7 @@ function activityEndMs(activity) {
   if (activity.ended_at) {
     return new Date(activity.ended_at).getTime();
   }
-  return new Date(activity.started_at).getTime() + activity.duration_secs * 1000;
+  return Date.now();
 }
 
 function activityLabel(activity) {
@@ -135,13 +135,8 @@ function activityLabel(activity) {
     return "Idle";
   }
 
-  const detail =
-    activity.subtitle && activity.subtitle !== activity.app_name
-      ? activity.subtitle
-      : activity.window_title;
-
-  if (detail && detail !== activity.app_name) {
-    return `${activity.app_name} · ${detail}`;
+  if (activity.subtitle && activity.subtitle !== activity.app_name) {
+    return `${activity.app_name} · ${activity.subtitle}`;
   }
 
   return activity.app_name;
@@ -152,9 +147,7 @@ function activityGroupKey(activity) {
     activity.is_idle ? "1" : "0",
     activity.app_name,
     activity.subtitle ?? "",
-    activity.window_title ?? "",
     activity.url ?? "",
-    activity.project ?? "",
   ].join("|");
 }
 

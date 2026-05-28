@@ -15,29 +15,18 @@ use crate::state::AppState;
 
 #[derive(Serialize)]
 pub struct ActivityDto {
-    pub id: i64,
     pub started_at: String,
     pub ended_at: Option<String>,
-    pub duration_secs: i64,
-    pub duration_label: String,
     pub app_name: String,
-    pub window_title: String,
-    pub url: Option<String>,
-    pub page_title: Option<String>,
-    pub project: Option<String>,
-    pub file: Option<String>,
-    pub cwd: Option<String>,
-    pub git_branch: Option<String>,
-    pub is_idle: bool,
     pub subtitle: String,
+    pub url: Option<String>,
+    pub is_idle: bool,
 }
 
 #[derive(Serialize)]
 pub struct TrackerStatus {
     pub accessibility_granted: bool,
     pub tracking_paused: bool,
-    pub idle_timeout_secs: u64,
-    pub total_today_secs: i64,
     pub total_today_label: String,
     pub app_binary_path: String,
 }
@@ -125,38 +114,23 @@ pub fn get_activities(
 ) -> Result<Vec<ActivityDto>, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
     let day = parse_day(day)?;
-    let now = Utc::now();
 
-    let mut activities = guard
-        .db
-        .activities_for_day(day)
-        .map_err(|e| e.to_string())?;
-    for activity in &mut activities {
-        if activity.ended_at.is_none() {
-            activity.duration_secs = activity.duration_secs_at(now);
-        }
-    }
-
-    let activities = merge_consecutive_activities(activities);
+    let activities = merge_consecutive_activities(
+        guard
+            .db
+            .activities_for_day(day)
+            .map_err(|e| e.to_string())?,
+    );
 
     Ok(activities
         .into_iter()
         .map(|a| ActivityDto {
-            id: a.id,
             started_at: a.started_at.to_rfc3339(),
             ended_at: a.ended_at.map(|t| t.to_rfc3339()),
-            duration_secs: a.duration_secs,
-            duration_label: format_duration(a.duration_secs),
             app_name: a.app_name.clone(),
-            window_title: a.window_title.clone(),
-            url: a.context.url.clone(),
-            page_title: a.context.page_title.clone(),
-            project: a.context.project.clone(),
-            file: a.context.file.clone(),
-            cwd: a.context.cwd.clone(),
-            git_branch: a.context.git_branch.clone(),
-            is_idle: a.is_idle,
             subtitle: build_subtitle(&a),
+            url: a.context.url.clone(),
+            is_idle: a.is_idle,
         })
         .collect())
 }
@@ -177,8 +151,6 @@ pub fn get_tracker_status(
     Ok(TrackerStatus {
         accessibility_granted: accessibility_effective(&guard.db),
         tracking_paused: guard.settings.tracking_paused,
-        idle_timeout_secs: guard.settings.idle_timeout_secs,
-        total_today_secs: total,
         total_today_label: format_duration(total),
         app_binary_path: current_binary_path(),
     })
@@ -227,11 +199,6 @@ pub fn delete_day_data(
         .delete_activities_for_day(day)
         .map_err(|e| e.to_string())?;
     Ok(deleted as u64)
-}
-
-#[tauri::command]
-pub fn get_terminal_hook_script() -> String {
-    hook_install_script()
 }
 
 #[tauri::command]

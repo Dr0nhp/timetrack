@@ -22,7 +22,6 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -61,7 +60,6 @@ pub fn run() {
             commands::delete_day_data,
             update::check_for_updates,
             update::install_update,
-            commands::get_terminal_hook_script,
             commands::install_terminal_hook,
         ])
         .run(tauri::generate_context!())

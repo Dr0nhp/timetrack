@@ -15,7 +15,6 @@ tauri-build = { version = "2", features = [] }
 timetrack-core = { path = "../crates/core" }
 timetrack-monitor = { path = "../crates/monitor" }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
-tauri-plugin-shell = "2"
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true

@@ -1,10 +1,9 @@
 {
   "name": "timetrack",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "scripts": {
-    "tauri": "bash scripts/with-rust.sh",
-    "build:release": "bash scripts/with-rust.sh build"
+    "tauri": "bash scripts/with-rust.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
