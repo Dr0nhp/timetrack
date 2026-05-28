@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TimeTrack</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div>
+          <h1>TimeTrack</h1>
+          <p class="subtitle" id="day-label">Heute</p>
+        </div>
+        <div class="header-actions">
+          <span class="total" id="total-label">0 Min</span>
+          <button id="refresh-btn" class="btn secondary">Aktualisieren</button>
+        </div>
+      </header>
+
+      <section id="permission-banner" class="banner hidden">
+        <div>
+          <strong>Bedienungshilfen erforderlich</strong>
+          <p>
+            TimeTrack braucht Zugriff auf Bedienungshilfen, um Fenstertitel und
+            Browser-Tabs zu erfassen. Ohne diese Berechtigung werden nur App-Namen
+            gespeichert.
+          </p>
+        </div>
+        <div class="banner-actions">
+          <button id="request-access-btn" class="btn">Berechtigung anfragen</button>
+          <button id="open-settings-btn" class="btn secondary">
+            Einstellungen öffnen
+          </button>
+        </div>
+      </section>
+
+      <section class="toolbar">
+        <button class="chip active" data-day="today">Heute</button>
+        <button class="chip" data-day="yesterday">Gestern</button>
+        <button id="pause-btn" class="btn secondary">Tracking pausieren</button>
+        <button id="hook-btn" class="btn secondary">Terminal-Hook</button>
+        <button id="delete-btn" class="btn danger">Daten löschen</button>
+      </section>
+
+      <main id="timeline" class="timeline"></main>
+      <p id="empty-state" class="empty hidden">
+        Noch keine Aktivitäten erfasst. Wechsle zwischen Apps, damit TimeTrack
+        deinen Tag aufzeichnet.
+      </p>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
