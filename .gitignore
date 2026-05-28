@@ -5,3 +5,5 @@
 *.db-journal
 node_modules
 dist
+src-tauri/.tauri/*.key
+!src-tauri/.tauri/*.key.pub

@@ -1,6 +1,7 @@
 mod commands;
 mod state;
 mod tracker;
+mod update;
 
 use std::sync::{Arc, Mutex};
 
@@ -22,6 +23,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let data_dir = dirs::data_dir()
                 .unwrap_or_else(std::env::temp_dir)
@@ -49,6 +52,9 @@ pub fn run() {
             commands::open_accessibility_settings_cmd,
             commands::set_tracking_paused,
             commands::delete_all_data,
+            commands::delete_day_data,
+            update::check_for_updates,
+            update::install_update,
             commands::get_terminal_hook_script,
             commands::install_terminal_hook,
         ])

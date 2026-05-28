@@ -6,42 +6,80 @@ const totalLabelEl = document.getElementById("total-label");
 const dayLabelEl = document.getElementById("day-label");
 const permissionBannerEl = document.getElementById("permission-banner");
 const pauseBtn = document.getElementById("pause-btn");
+const dayPickerEl = document.getElementById("day-picker");
 
 const BUCKET_MINUTES = 15;
 
-let selectedDay = "today";
+let selectedDateIso = isoToday();
 let trackingPaused = false;
 let lastActivities = [];
 const expandedBuckets = new Set();
 
-function formatDayLabel(dayKey) {
-  const now = new Date();
-  if (dayKey === "today") {
-    return `Heute, ${now.toLocaleDateString("de-DE", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    })}`;
-  }
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  return `Gestern, ${yesterday.toLocaleDateString("de-DE", {
+function isoToday() {
+  return formatIsoDate(new Date());
+}
+
+function isoYesterday() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return formatIsoDate(date);
+}
+
+function formatIsoDate(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseIsoDate(iso) {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDayLabel(iso) {
+  const date = parseIsoDate(iso);
+  const formatted = date.toLocaleDateString("de-DE", {
+    weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
-  })}`;
+  });
+
+  if (iso === isoToday()) {
+    return `Heute, ${formatted}`;
+  }
+  if (iso === isoYesterday()) {
+    return `Gestern, ${formatted}`;
+  }
+  return formatted;
 }
 
-function dayParam(dayKey) {
-  const now = new Date();
-  const target = new Date(now);
-  if (dayKey === "yesterday") {
-    target.setDate(now.getDate() - 1);
-  }
-  const yyyy = target.getFullYear();
-  const mm = String(target.getMonth() + 1).padStart(2, "0");
-  const dd = String(target.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+function formatDayLabelShort(iso) {
+  return parseIsoDate(iso).toLocaleDateString("de-DE", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function syncDayPickerLimits() {
+  dayPickerEl.max = isoToday();
+}
+
+function syncChipState() {
+  document.querySelectorAll(".chip[data-day]").forEach((chip) => {
+    const isToday = chip.dataset.day === "today" && selectedDateIso === isoToday();
+    const isYesterday =
+      chip.dataset.day === "yesterday" && selectedDateIso === isoYesterday();
+    chip.classList.toggle("active", isToday || isYesterday);
+  });
+}
+
+function setSelectedDate(iso) {
+  selectedDateIso = iso;
+  dayPickerEl.value = iso;
+  syncChipState();
 }
 
 function formatTime(date) {
@@ -295,13 +333,13 @@ function renderActivities(activities) {
 
 async function refresh() {
   const [activities, status] = await Promise.all([
-    invoke("get_activities", { day: dayParam(selectedDay) }),
-    invoke("get_tracker_status"),
+    invoke("get_activities", { day: selectedDateIso }),
+    invoke("get_tracker_status", { day: selectedDateIso }),
   ]);
 
   renderActivities(activities);
   totalLabelEl.textContent = status.total_today_label;
-  dayLabelEl.textContent = formatDayLabel(selectedDay);
+  dayLabelEl.textContent = formatDayLabel(selectedDateIso);
   trackingPaused = status.tracking_paused;
   pauseBtn.textContent = trackingPaused
     ? "Tracking fortsetzen"
@@ -316,13 +354,20 @@ async function refresh() {
 
 document.querySelectorAll(".chip[data-day]").forEach((chip) => {
   chip.addEventListener("click", async () => {
-    document.querySelectorAll(".chip[data-day]").forEach((el) => {
-      el.classList.toggle("active", el === chip);
-    });
-    selectedDay = chip.dataset.day;
+    const iso = chip.dataset.day === "yesterday" ? isoYesterday() : isoToday();
+    setSelectedDate(iso);
     expandedBuckets.clear();
     await refresh();
   });
+});
+
+dayPickerEl.addEventListener("change", async () => {
+  if (!dayPickerEl.value) {
+    return;
+  }
+  setSelectedDate(dayPickerEl.value);
+  expandedBuckets.clear();
+  await refresh();
 });
 
 document.getElementById("refresh-btn").addEventListener("click", refresh);
@@ -346,14 +391,67 @@ document.getElementById("hook-btn").addEventListener("click", async () => {
   alert(message);
 });
 
-document.getElementById("delete-btn").addEventListener("click", async () => {
-  if (!confirm("Alle erfassten Aktivitäten unwiderruflich löschen?")) {
+document.getElementById("check-update-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("check-update-btn");
+  btn.disabled = true;
+  btn.textContent = "Suche…";
+
+  try {
+    const result = await invoke("check_for_updates");
+    if (!result.available) {
+      alert(`TimeTrack ${result.current_version} ist aktuell.`);
+      return;
+    }
+
+    const notes = result.notes ? `\n\n${result.notes}` : "";
+    if (
+      confirm(
+        `Update ${result.version} ist verfügbar.${notes}\n\nJetzt herunterladen und installieren? Die App startet danach neu.`
+      )
+    ) {
+      btn.textContent = "Installiere…";
+      await invoke("install_update");
+    }
+  } catch (err) {
+    alert(`Update fehlgeschlagen: ${err}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Nach Updates suchen";
+  }
+});
+
+document.getElementById("delete-day-btn").addEventListener("click", async () => {
+  const label = formatDayLabelShort(selectedDateIso);
+  if (
+    !confirm(
+      `Alle Aktivitäten vom ${label} unwiderruflich löschen?\n\nDer Rest der Timeline bleibt erhalten.`
+    )
+  ) {
     return;
   }
-  await invoke("delete_all_data");
+
+  const deleted = await invoke("delete_day_data", { day: selectedDateIso });
+  alert(`${deleted} Einträge gelöscht.`);
   expandedBuckets.clear();
   await refresh();
 });
 
+document.getElementById("delete-all-btn").addEventListener("click", async () => {
+  if (
+    !confirm(
+      "Alle erfassten Aktivitäten unwiderruflich löschen?\n\nDie komplette Timeline-Datenbank wird geleert."
+    )
+  ) {
+    return;
+  }
+
+  const deleted = await invoke("delete_all_data");
+  alert(`${deleted} Einträge gelöscht.`);
+  expandedBuckets.clear();
+  await refresh();
+});
+
+syncDayPickerLimits();
+setSelectedDate(selectedDateIso);
 refresh();
 setInterval(refresh, 5000);

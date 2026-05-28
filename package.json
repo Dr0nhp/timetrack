@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "tauri": "tauri"
+    "tauri": "bash scripts/with-rust.sh",
+    "build:release": "bash scripts/with-rust.sh build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

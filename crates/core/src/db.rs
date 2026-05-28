@@ -172,9 +172,25 @@ impl Database {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    pub fn delete_all(&self) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM activities", [])?;
-        Ok(())
+    pub fn delete_all(&self) -> Result<usize, DbError> {
+        Ok(self.conn.execute("DELETE FROM activities", [])?)
+    }
+
+    pub fn delete_activities_for_day(&self, day: chrono::NaiveDate) -> Result<usize, DbError> {
+        let start = day.and_hms_opt(0, 0, 0).unwrap().and_utc().to_rfc3339();
+        let end = day
+            .succ_opt()
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .to_rfc3339();
+
+        let deleted = self.conn.execute(
+            "DELETE FROM activities WHERE started_at >= ?1 AND started_at < ?2",
+            params![start, end],
+        )?;
+        Ok(deleted)
     }
 
     pub fn total_duration_for_day(&self, day: chrono::NaiveDate) -> Result<i64, DbError> {
@@ -338,6 +354,28 @@ mod tests {
 
         db.delete_all().unwrap();
         assert!(db.activities_for_day(start.date_naive()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_activities_for_day_only_removes_matching_day() {
+        let db = Database::open_in_memory().unwrap();
+        let day1 = Utc.with_ymd_and_hms(2026, 5, 27, 10, 0, 0).unwrap();
+        let day2 = Utc.with_ymd_and_hms(2026, 5, 28, 10, 0, 0).unwrap();
+
+        let id1 = db.insert_segment(&snapshot("Slack", "com.slack"), day1).unwrap();
+        db.close_segment(id1, day1 + chrono::Duration::minutes(5))
+            .unwrap();
+
+        let id2 = db.insert_segment(&snapshot("Zed", "dev.zed.Zed"), day2).unwrap();
+        db.close_segment(id2, day2 + chrono::Duration::minutes(5))
+            .unwrap();
+
+        let deleted = db
+            .delete_activities_for_day(day1.date_naive())
+            .unwrap();
+        assert_eq!(deleted, 1);
+        assert!(db.activities_for_day(day1.date_naive()).unwrap().is_empty());
+        assert_eq!(db.activities_for_day(day2.date_naive()).unwrap().len(), 1);
     }
 
     #[test]

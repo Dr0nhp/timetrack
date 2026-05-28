@@ -87,7 +87,76 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.day-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.date-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 999px;
+}
+
+.date-picker-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.date-picker input[type="date"] {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.date-picker input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+  cursor: pointer;
+}
+
+.data-panel {
   margin-bottom: 20px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.data-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+.data-panel-hint {
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.data-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn.danger.secondary {
+  background: transparent;
+  border-color: #7a2e2e;
 }
 
 .chip,
@@ -291,6 +360,15 @@ body {
 }
 
 @media (max-width: 720px) {
+  .day-nav {
+    width: 100%;
+  }
+
+  .date-picker {
+    flex: 1;
+    min-width: 0;
+  }
+
   .bucket-header {
     grid-template-columns: 1fr auto 20px;
   }

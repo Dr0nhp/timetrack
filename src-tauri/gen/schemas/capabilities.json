@@ -1,1 +1,1 @@
-{"com.timetrack.app":{"identifier":"com.timetrack.app","description":"","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open"]}}
+{"com.timetrack.app":{"identifier":"com.timetrack.app","description":"","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","updater:default","process:allow-restart"]}}

@@ -130,12 +130,15 @@ pub fn get_activities(
 }
 
 #[tauri::command]
-pub fn get_tracker_status(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<TrackerStatus, String> {
+pub fn get_tracker_status(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    day: Option<String>,
+) -> Result<TrackerStatus, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
-    let today = Local::now().date_naive();
+    let day = parse_day(day)?;
     let total = guard
         .db
-        .total_duration_for_day(today)
+        .total_duration_for_day(day)
         .map_err(|e| e.to_string())?;
 
     Ok(TrackerStatus {
@@ -169,9 +172,27 @@ pub fn set_tracking_paused(
 }
 
 #[tauri::command]
-pub fn delete_all_data(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<(), String> {
+pub fn delete_all_data(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<u64, String> {
     let guard = state.lock().map_err(|e| e.to_string())?;
-    guard.db.delete_all().map_err(|e| e.to_string())
+    guard
+        .db
+        .delete_all()
+        .map_err(|e| e.to_string())
+        .map(|count| count as u64)
+}
+
+#[tauri::command]
+pub fn delete_day_data(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    day: String,
+) -> Result<u64, String> {
+    let guard = state.lock().map_err(|e| e.to_string())?;
+    let day = parse_day(Some(day))?;
+    let deleted = guard
+        .db
+        .delete_activities_for_day(day)
+        .map_err(|e| e.to_string())?;
+    Ok(deleted as u64)
 }
 
 #[tauri::command]
