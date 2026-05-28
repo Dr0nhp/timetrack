@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "timetrack"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -3788,7 +3788,7 @@ dependencies = [
 
 [[package]]
 name = "timetrack-core"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "dirs",
@@ -3802,7 +3802,7 @@ dependencies = [
 
 [[package]]
 name = "timetrack-monitor"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "accessibility-sys",
  "core-foundation",

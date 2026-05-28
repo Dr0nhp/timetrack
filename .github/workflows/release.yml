@@ -31,20 +31,23 @@ jobs:
         run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Generate latest.json
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           TAG="${GITHUB_REF_NAME}"
-          BUNDLE="src-tauri/target/release/bundle/macos"
+          BUNDLE="target/release/bundle/macos"
           SIG_FILE="${BUNDLE}/TimeTrack.app.tar.gz.sig"
+          echo "Bundle contents:"
+          ls -la "${BUNDLE}"
           bash scripts/generate-latest-json.sh "$VERSION" "$TAG" "$SIG_FILE" "TimeTrack.app.tar.gz"
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            src-tauri/target/release/bundle/macos/TimeTrack.app.tar.gz
-            src-tauri/target/release/bundle/macos/TimeTrack.app.tar.gz.sig
-            src-tauri/target/release/bundle/dmg/TimeTrack_*_aarch64.dmg
+            target/release/bundle/macos/TimeTrack.app.tar.gz
+            target/release/bundle/macos/TimeTrack.app.tar.gz.sig
+            target/release/bundle/dmg/TimeTrack_*_aarch64.dmg
             latest.json
