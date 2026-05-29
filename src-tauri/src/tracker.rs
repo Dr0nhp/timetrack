@@ -27,7 +27,7 @@ fn tracker_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
     let mut segments = SegmentTracker::new();
 
     loop {
-        let (poll_ms, idle_timeout, paused) = {
+        let (poll_ms, idle_timeout, paused, track_now) = {
             let guard = match state.lock() {
                 Ok(g) => g,
                 Err(_) => {
@@ -40,18 +40,50 @@ fn tracker_loop(state: Arc<Mutex<AppState>>, app: AppHandle) {
                 guard.settings.poll_interval_ms,
                 guard.settings.idle_timeout_secs,
                 guard.settings.tracking_paused,
+                guard.settings.work_hours.is_active_now(),
             )
         };
 
-        if !paused {
-            match tick(&state, &mut segments, idle_timeout, &app) {
-                Ok(()) => {}
-                Err(err) => warn!("tracker tick failed: {err}"),
+        if paused {
+            thread::sleep(Duration::from_millis(poll_ms));
+            continue;
+        }
+
+        if !track_now {
+            if let Err(err) = close_open_segment(&state, &mut segments, &app) {
+                warn!("failed to close segment outside work hours: {err}");
             }
+            thread::sleep(Duration::from_millis(poll_ms));
+            continue;
+        }
+
+        match tick(&state, &mut segments, idle_timeout, &app) {
+            Ok(()) => {}
+            Err(err) => warn!("tracker tick failed: {err}"),
         }
 
         thread::sleep(Duration::from_millis(poll_ms));
     }
+}
+
+fn close_open_segment(
+    state: &Arc<Mutex<AppState>>,
+    segments: &mut SegmentTracker,
+    app: &AppHandle,
+) -> Result<(), String> {
+    let now = Utc::now();
+    let guard = state.lock().map_err(|e| e.to_string())?;
+
+    if let Some(open_id) = segments.on_segment_closed(now) {
+        guard
+            .db
+            .close_segment(open_id, now)
+            .map_err(|e| e.to_string())?;
+        drop(guard);
+        let _ = app.emit("timeline-changed", ());
+    }
+
+    Ok(())
 }
 
 fn tick(

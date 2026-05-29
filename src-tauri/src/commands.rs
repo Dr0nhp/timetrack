@@ -6,6 +6,7 @@ use serde::Serialize;
 use timetrack_core::{
     merge_consecutive_activities,
     parser::terminal::hook_install_script,
+    parse_hh_mm,
 };
 use timetrack_monitor::{
     is_accessibility_trusted, open_accessibility_settings, request_accessibility_prompt,
@@ -27,16 +28,16 @@ pub struct ActivityDto {
 pub struct TrackerStatus {
     pub accessibility_granted: bool,
     pub tracking_paused: bool,
+    pub work_hours_enabled: bool,
+    pub work_hours_active: bool,
+    pub work_hours_start: String,
+    pub work_hours_end: String,
     pub total_today_label: String,
     pub app_binary_path: String,
 }
 
-fn accessibility_effective(db: &timetrack_core::Database) -> bool {
+fn accessibility_effective() -> bool {
     if is_accessibility_trusted() {
-        return true;
-    }
-
-    if db.has_rich_activity_context().unwrap_or(false) {
         return true;
     }
 
@@ -149,8 +150,12 @@ pub fn get_tracker_status(
         .map_err(|e| e.to_string())?;
 
     Ok(TrackerStatus {
-        accessibility_granted: accessibility_effective(&guard.db),
+        accessibility_granted: accessibility_effective(),
         tracking_paused: guard.settings.tracking_paused,
+        work_hours_enabled: guard.settings.work_hours.enabled,
+        work_hours_active: guard.settings.work_hours.is_active_now(),
+        work_hours_start: guard.settings.work_hours.start_label(),
+        work_hours_end: guard.settings.work_hours.end_label(),
         total_today_label: format_duration(total),
         app_binary_path: current_binary_path(),
     })
@@ -168,12 +173,47 @@ pub fn open_accessibility_settings_cmd() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn set_work_hours(
+    state: tauri::State<'_, Arc<Mutex<AppState>>>,
+    enabled: bool,
+    start: String,
+    end: String,
+) -> Result<TrackerStatus, String> {
+    let start_minutes = parse_hh_mm(&start).ok_or("Ungültige Startzeit (HH:MM)")?;
+    let end_minutes = parse_hh_mm(&end).ok_or("Ungültige Endzeit (HH:MM)")?;
+
+    let mut guard = state.lock().map_err(|e| e.to_string())?;
+    guard.settings.work_hours.enabled = enabled;
+    guard.settings.work_hours.start_minutes = start_minutes;
+    guard.settings.work_hours.end_minutes = end_minutes;
+    guard.save_settings().map_err(|e| e.to_string())?;
+
+    let day = Local::now().date_naive();
+    let total = guard
+        .db
+        .total_duration_for_day(day, Utc::now())
+        .map_err(|e| e.to_string())?;
+
+    Ok(TrackerStatus {
+        accessibility_granted: accessibility_effective(),
+        tracking_paused: guard.settings.tracking_paused,
+        work_hours_enabled: guard.settings.work_hours.enabled,
+        work_hours_active: guard.settings.work_hours.is_active_now(),
+        work_hours_start: guard.settings.work_hours.start_label(),
+        work_hours_end: guard.settings.work_hours.end_label(),
+        total_today_label: format_duration(total),
+        app_binary_path: current_binary_path(),
+    })
+}
+
+#[tauri::command]
 pub fn set_tracking_paused(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     paused: bool,
 ) -> Result<(), String> {
     let mut guard = state.lock().map_err(|e| e.to_string())?;
     guard.settings.tracking_paused = paused;
+    guard.save_settings().map_err(|e| e.to_string())?;
     Ok(())
 }
 

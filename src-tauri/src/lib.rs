@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem, MenuItemKind, HELP_SUBMENU_ID},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    Manager,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -22,6 +22,7 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -47,7 +48,10 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "check_updates" {
-                let _ = app.emit("menu-check-updates", ());
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    update::run_update_flow(app).await;
+                });
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -56,6 +60,7 @@ pub fn run() {
             commands::request_accessibility,
             commands::open_accessibility_settings_cmd,
             commands::set_tracking_paused,
+            commands::set_work_hours,
             commands::delete_all_data,
             commands::delete_day_data,
             update::check_for_updates,

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,10 +99,69 @@ impl Activity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkHoursSettings {
+    pub enabled: bool,
+    /// Minutes since midnight in local time, inclusive start.
+    pub start_minutes: u16,
+    /// Minutes since midnight in local time, exclusive end.
+    pub end_minutes: u16,
+}
+
+impl Default for WorkHoursSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            start_minutes: 9 * 60,
+            end_minutes: 18 * 60,
+        }
+    }
+}
+
+impl WorkHoursSettings {
+    pub fn is_active_now(&self) -> bool {
+        if !self.enabled {
+            return true;
+        }
+
+        let now = chrono::Local::now().time();
+        let minutes = now.hour() as u16 * 60 + now.minute() as u16;
+
+        if self.start_minutes <= self.end_minutes {
+            minutes >= self.start_minutes && minutes < self.end_minutes
+        } else {
+            minutes >= self.start_minutes || minutes < self.end_minutes
+        }
+    }
+
+    pub fn start_label(&self) -> String {
+        format_minutes(self.start_minutes)
+    }
+
+    pub fn end_label(&self) -> String {
+        format_minutes(self.end_minutes)
+    }
+}
+
+pub fn parse_hh_mm(value: &str) -> Option<u16> {
+    let (hour, minute) = value.split_once(':')?;
+    let hour: u16 = hour.parse().ok()?;
+    let minute: u16 = minute.parse().ok()?;
+    if hour >= 24 || minute >= 60 {
+        return None;
+    }
+    Some(hour * 60 + minute)
+}
+
+fn format_minutes(total: u16) -> String {
+    format!("{:02}:{:02}", total / 60, total % 60)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackerSettings {
     pub idle_timeout_secs: u64,
     pub poll_interval_ms: u64,
     pub tracking_paused: bool,
+    pub work_hours: WorkHoursSettings,
 }
 
 impl Default for TrackerSettings {
@@ -111,6 +170,7 @@ impl Default for TrackerSettings {
             idle_timeout_secs: 300,
             poll_interval_ms: 1500,
             tracking_paused: false,
+            work_hours: WorkHoursSettings::default(),
         }
     }
 }

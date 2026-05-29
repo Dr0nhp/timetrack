@@ -53,6 +53,30 @@
       </section>
 
       <details class="data-panel">
+        <summary>Arbeitszeiten</summary>
+        <p class="data-panel-hint">
+          Außerhalb dieser Zeiten wird nichts erfasst. Ideal, um Abends/Wochenende
+          auszublenden.
+        </p>
+        <label class="work-hours-toggle">
+          <input type="checkbox" id="work-hours-enabled" />
+          Nur in Arbeitszeiten tracken
+        </label>
+        <div class="work-hours-fields">
+          <label class="time-field">
+            Von
+            <input type="time" id="work-hours-start" value="09:00" />
+          </label>
+          <label class="time-field">
+            Bis
+            <input type="time" id="work-hours-end" value="18:00" />
+          </label>
+          <button id="save-work-hours-btn" class="btn secondary">Speichern</button>
+        </div>
+        <p class="work-hours-status" id="work-hours-status"></p>
+      </details>
+
+      <details class="data-panel">
         <summary>Daten verwalten</summary>
         <p class="data-panel-hint">
           Aktivitäten werden lokal in SQLite gespeichert und nicht automatisch gelöscht.
@@ -72,6 +96,14 @@
         Noch keine Aktivitäten erfasst. Wechsle zwischen Apps, damit TimeTrack
         deinen Tag aufzeichnet.
       </p>
+    </div>
+
+    <div id="update-overlay" class="update-overlay hidden" aria-live="polite">
+      <div class="update-overlay-card">
+        <strong id="update-overlay-title">Update</strong>
+        <p id="update-overlay-message">Bitte warten…</p>
+        <progress id="update-overlay-progress" class="update-progress" max="100" value="0"></progress>
+      </div>
     </div>
 
     <script type="module" src="main.js"></script>

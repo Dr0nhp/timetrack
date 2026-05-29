@@ -1,5 +1,6 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const { getCurrentWebviewWindow } = window.__TAURI__.webviewWindow;
 
 const timelineEl = document.getElementById("timeline");
 const emptyStateEl = document.getElementById("empty-state");
@@ -10,6 +11,10 @@ const permissionBannerPathEl = document.getElementById("permission-banner-path")
 const permissionBannerHintEl = document.getElementById("permission-banner-hint");
 const pauseBtn = document.getElementById("pause-btn");
 const dayPickerEl = document.getElementById("day-picker");
+const workHoursEnabledEl = document.getElementById("work-hours-enabled");
+const workHoursStartEl = document.getElementById("work-hours-start");
+const workHoursEndEl = document.getElementById("work-hours-end");
+const workHoursStatusEl = document.getElementById("work-hours-status");
 
 const REFRESH_INTERVAL_MS = 2000;
 const BUCKET_MINUTES = 15;
@@ -355,6 +360,17 @@ async function refresh() {
         : "In den Systemeinstellungen unter Bedienungshilfen TimeTrack aktivieren und danach neu starten.";
     }
   }
+
+  workHoursEnabledEl.checked = status.work_hours_enabled;
+  workHoursStartEl.value = status.work_hours_start;
+  workHoursEndEl.value = status.work_hours_end;
+  if (!status.work_hours_enabled) {
+    workHoursStatusEl.textContent = "Arbeitszeiten sind deaktiviert — es wird rund um die Uhr getrackt.";
+  } else if (status.work_hours_active) {
+    workHoursStatusEl.textContent = `Tracking aktiv (${status.work_hours_start}–${status.work_hours_end}).`;
+  } else {
+    workHoursStatusEl.textContent = `Außerhalb der Arbeitszeit (${status.work_hours_start}–${status.work_hours_end}) — pausiert.`;
+  }
 }
 
 document.querySelectorAll(".chip[data-day]").forEach((chip) => {
@@ -389,13 +405,77 @@ pauseBtn.addEventListener("click", async () => {
   await refresh();
 });
 
+document.getElementById("save-work-hours-btn").addEventListener("click", async () => {
+  await invoke("set_work_hours", {
+    enabled: workHoursEnabledEl.checked,
+    start: workHoursStartEl.value,
+    end: workHoursEndEl.value,
+  });
+  await refresh();
+});
+
 document.getElementById("hook-btn").addEventListener("click", async () => {
   const message = await invoke("install_terminal_hook");
   alert(message);
 });
 
+const updateOverlayEl = document.getElementById("update-overlay");
+const updateOverlayTitleEl = document.getElementById("update-overlay-title");
+const updateOverlayMessageEl = document.getElementById("update-overlay-message");
+const updateOverlayProgressEl = document.getElementById("update-overlay-progress");
+
+function showUpdateOverlay(title, message, progress = null) {
+  updateOverlayTitleEl.textContent = title;
+  updateOverlayMessageEl.textContent = message;
+  if (progress === null) {
+    updateOverlayProgressEl.classList.add("hidden");
+    updateOverlayProgressEl.removeAttribute("value");
+  } else {
+    updateOverlayProgressEl.classList.remove("hidden");
+    updateOverlayProgressEl.value = progress;
+  }
+  updateOverlayEl.classList.remove("hidden");
+}
+
+function hideUpdateOverlay() {
+  updateOverlayEl.classList.add("hidden");
+}
+
+listen("update-progress", ({ payload }) => {
+  const titles = {
+    checking: "Update wird vorbereitet",
+    downloading: "Update wird heruntergeladen",
+    installing: "Update wird installiert",
+    restarting: "Neustart",
+  };
+  const title = titles[payload.phase] || "Update";
+  let progress = null;
+  if (payload.phase === "downloading" && payload.total) {
+    progress = Math.min(
+      100,
+      Math.round((payload.downloaded / payload.total) * 100)
+    );
+  } else if (payload.phase === "installing") {
+    progress = 100;
+  }
+  showUpdateOverlay(title, payload.message, progress);
+});
+
+async function focusMainWindow() {
+  const window = getCurrentWebviewWindow();
+  await window.show();
+  await window.unminimize();
+  await window.setFocus();
+}
+
+async function waitForNextFrame() {
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
 async function checkForUpdates() {
   try {
+    await focusMainWindow();
     const result = await invoke("check_for_updates");
     if (!result.available) {
       alert(`TimeTrack ${result.current_version} ist aktuell.`);
@@ -405,19 +485,21 @@ async function checkForUpdates() {
     const notes = result.notes ? `\n\n${result.notes}` : "";
     if (
       confirm(
-        `Update ${result.version} ist verfügbar.${notes}\n\nJetzt herunterladen und installieren? Die App startet danach neu.`
+        `Update ${result.version} ist verfügbar.${notes}\n\nJetzt herunterladen und installieren? Die App startet danach neu.\n\nHinweis: macOS kann nach dem Download einen Passwort-Dialog anzeigen.`
       )
     ) {
+      showUpdateOverlay(
+        "Update wird heruntergeladen",
+        "Bitte warten… Ein macOS-Passwort-Dialog kann erscheinen."
+      );
+      await waitForNextFrame();
       await invoke("install_update");
     }
   } catch (err) {
+    hideUpdateOverlay();
     alert(`Update fehlgeschlagen: ${err}`);
   }
 }
-
-listen("menu-check-updates", () => {
-  checkForUpdates();
-});
 
 listen("timeline-changed", () => {
   if (!document.hidden) {
