@@ -5,7 +5,7 @@ pub mod segment;
 
 pub use db::{Database, DbError};
 pub use models::{
-    Activity, ActivityContext, ActivitySnapshot, TrackerSettings, WorkHoursSettings,
+    Activity, ActivityContext, ActivitySnapshot, DayWorkHours, TrackerSettings, WorkHoursSettings,
 };
 pub use models::parse_hh_mm;
 pub use segment::{merge_consecutive_activities, SegmentTracker};

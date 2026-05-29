@@ -165,6 +165,43 @@ impl Database {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub fn activities_all(&self) -> Result<Vec<Activity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "
+            SELECT id, started_at, ended_at, duration_secs, app_name, app_bundle_id,
+                   window_title, url, page_title, project, file, cwd, git_branch, is_idle
+            FROM activities
+            ORDER BY started_at ASC
+            ",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(Activity {
+                id: row.get(0)?,
+                started_at: parse_ts_sql(row.get::<_, String>(1)?)?,
+                ended_at: row
+                    .get::<_, Option<String>>(2)?
+                    .map(parse_ts_sql)
+                    .transpose()?,
+                duration_secs: row.get(3)?,
+                app_name: row.get(4)?,
+                app_bundle_id: row.get(5)?,
+                window_title: row.get(6)?,
+                context: ActivityContext {
+                    url: row.get(7)?,
+                    page_title: row.get(8)?,
+                    project: row.get(9)?,
+                    file: row.get(10)?,
+                    cwd: row.get(11)?,
+                    git_branch: row.get(12)?,
+                },
+                is_idle: row.get::<_, i64>(13)? != 0,
+            })
+        })?;
+
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn delete_all(&self) -> Result<usize, DbError> {
         Ok(self.conn.execute("DELETE FROM activities", [])?)
     }

@@ -1,4 +1,5 @@
 mod commands;
+mod export;
 mod state;
 mod tracker;
 mod update;
@@ -35,7 +36,8 @@ pub fn run() {
             let state = Arc::new(Mutex::new(AppState::new(db_path)?));
             let _tracker = TrackerHandle::start(Arc::clone(&state), app.handle().clone());
 
-            app.manage(state);
+            app.manage(state.clone());
+            update::start_update_poll(app.handle().clone(), Arc::clone(&state));
 
             setup_tray(app)?;
             setup_app_menu(app)?;
@@ -60,12 +62,15 @@ pub fn run() {
             commands::request_accessibility,
             commands::open_accessibility_settings_cmd,
             commands::set_tracking_paused,
-            commands::set_work_hours,
+            commands::set_work_schedule,
             commands::delete_all_data,
             commands::delete_day_data,
             update::check_for_updates,
             update::install_update,
             commands::install_terminal_hook,
+            commands::export_activities,
+            commands::get_terminal_hook_status,
+            commands::get_capture_preview,
         ])
         .run(tauri::generate_context!())
         .expect("error while running timetrack");

@@ -1,7 +1,7 @@
 {
   "name": "timetrack",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "scripts": {
     "tauri": "bash scripts/with-rust.sh"
   },

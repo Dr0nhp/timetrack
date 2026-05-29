@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
@@ -127,6 +128,49 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, Stri
     })
 }
 
+fn sync_pending_update(
+    app: &AppHandle,
+    state: &Arc<Mutex<crate::state::AppState>>,
+    result: &UpdateCheckResult,
+) {
+    let (previous, current) = {
+        let Ok(mut guard) = state.lock() else {
+            return;
+        };
+        let previous = guard.pending_update_version.clone();
+        if result.available {
+            guard.pending_update_version = result.version.clone();
+        } else {
+            guard.pending_update_version = None;
+        }
+        (previous, guard.pending_update_version.clone())
+    };
+
+    if previous != current {
+        let _ = app.emit("update-available-changed", current);
+    }
+}
+
+pub async fn refresh_pending_update(app: AppHandle, state: Arc<Mutex<crate::state::AppState>>) {
+    let result = check_for_updates(app.clone()).await;
+    match result {
+        Ok(update) => sync_pending_update(&app, &state, &update),
+        Err(err) => tracing::debug!("background update check failed: {err}"),
+    }
+}
+
+pub fn start_update_poll(app: AppHandle, state: Arc<Mutex<crate::state::AppState>>) {
+    std::thread::spawn(move || {
+        loop {
+            tauri::async_runtime::block_on(refresh_pending_update(
+                app.clone(),
+                Arc::clone(&state),
+            ));
+            std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+        }
+    });
+}
+
 pub async fn run_update_flow(app: AppHandle) {
     show_main_window(&app);
 
@@ -136,6 +180,9 @@ pub async fn run_update_flow(app: AppHandle) {
         return;
     }
     let result = check.unwrap();
+    if let Some(state) = app.try_state::<Arc<Mutex<crate::state::AppState>>>() {
+        sync_pending_update(&app, &state, &result);
+    }
 
     if !result.available {
         show_dialog(

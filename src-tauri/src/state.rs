@@ -14,6 +14,7 @@ pub enum StateError {
 pub struct AppState {
     pub db: Database,
     pub settings: TrackerSettings,
+    pub pending_update_version: Option<String>,
     settings_path: PathBuf,
 }
 
@@ -27,6 +28,7 @@ impl AppState {
         Ok(Self {
             db,
             settings,
+            pending_update_version: None,
             settings_path,
         })
     }

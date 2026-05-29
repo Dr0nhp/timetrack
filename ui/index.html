@@ -15,6 +15,29 @@
         </div>
         <div class="header-actions">
           <span class="total" id="total-label">0 Min</span>
+          <button
+            id="open-settings-btn"
+            class="icon-btn has-status-dot status-dot-active"
+            type="button"
+            aria-label="Einstellungen"
+            title="Tracking aktiv"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+              />
+              <path
+                d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.3 1a7.9 7.9 0 0 0-1.7-1L15.5 2h-7L8.5 5.9a7.9 7.9 0 0 0-1.7 1l-2.3-1-2 3.5 2 1.5a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.5 2.3-1a7.9 7.9 0 0 0 1.7 1L8.5 22h7l.3-3.9a7.9 7.9 0 0 0 1.7-1l2.3 1 2-3.5-2-1.5Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -34,8 +57,8 @@
         </div>
         <div class="banner-actions">
           <button id="request-access-btn" class="btn">Berechtigung anfragen</button>
-          <button id="open-settings-btn" class="btn secondary">
-            Einstellungen öffnen
+          <button id="open-accessibility-settings-btn" class="btn secondary">
+            Systemeinstellungen
           </button>
         </div>
       </section>
@@ -48,48 +71,7 @@
             <input type="date" id="day-picker" aria-label="Datum" title="Datum" />
           </label>
         </div>
-        <button id="pause-btn" class="btn secondary">Tracking pausieren</button>
-        <button id="hook-btn" class="btn secondary">Terminal-Hook</button>
       </section>
-
-      <details class="data-panel">
-        <summary>Arbeitszeiten</summary>
-        <p class="data-panel-hint">
-          Außerhalb dieser Zeiten wird nichts erfasst. Ideal, um Abends/Wochenende
-          auszublenden.
-        </p>
-        <label class="work-hours-toggle">
-          <input type="checkbox" id="work-hours-enabled" />
-          Nur in Arbeitszeiten tracken
-        </label>
-        <div class="work-hours-fields">
-          <label class="time-field">
-            Von
-            <input type="time" id="work-hours-start" value="09:00" />
-          </label>
-          <label class="time-field">
-            Bis
-            <input type="time" id="work-hours-end" value="18:00" />
-          </label>
-          <button id="save-work-hours-btn" class="btn secondary">Speichern</button>
-        </div>
-        <p class="work-hours-status" id="work-hours-status"></p>
-      </details>
-
-      <details class="data-panel">
-        <summary>Daten verwalten</summary>
-        <p class="data-panel-hint">
-          Aktivitäten werden lokal in SQLite gespeichert und nicht automatisch gelöscht.
-        </p>
-        <div class="data-panel-actions">
-          <button id="delete-day-btn" class="btn danger secondary">
-            Ausgewählten Tag löschen
-          </button>
-          <button id="delete-all-btn" class="btn danger">
-            Alle Daten löschen
-          </button>
-        </div>
-      </details>
 
       <main id="timeline" class="timeline"></main>
       <p id="empty-state" class="empty hidden">
@@ -98,7 +80,144 @@
       </p>
     </div>
 
-    <div id="update-overlay" class="update-overlay hidden" aria-live="polite">
+    <div id="settings-overlay" class="sheet hidden" aria-hidden="true">
+      <button
+        id="settings-backdrop"
+        class="sheet-overlay"
+        type="button"
+        aria-label="Einstellungen schließen"
+        tabindex="-1"
+      ></button>
+      <aside
+        id="settings-panel"
+        class="sheet-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        aria-describedby="settings-description"
+      >
+        <header class="sheet-header">
+          <div class="sheet-header-text">
+            <h2 id="settings-title">Einstellungen</h2>
+            <p id="settings-description" class="sheet-description">
+              Tracking, Arbeitszeiten und Daten verwalten.
+            </p>
+          </div>
+          <button
+            id="close-settings-btn"
+            class="icon-btn icon-btn-ghost sheet-close"
+            type="button"
+            aria-label="Schließen"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 6l12 12M18 6 6 18"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        </header>
+
+        <div class="sheet-body">
+          <div id="update-available-banner" class="update-banner hidden" role="status">
+            <p>
+              Update <strong id="update-available-version"></strong> verfügbar.
+            </p>
+            <button id="install-update-btn" class="btn secondary" type="button">
+              Jetzt installieren
+            </button>
+          </div>
+
+          <section class="sheet-group">
+            <div class="sheet-group-header">
+              <h3>Tracking</h3>
+              <p>Pausiert das Erfassen ohne die Timeline zu löschen.</p>
+            </div>
+            <button id="pause-btn" class="btn secondary sheet-action">
+              Tracking pausieren
+            </button>
+          </section>
+
+          <div class="separator" role="separator"></div>
+
+          <section class="sheet-group">
+            <div class="sheet-group-header">
+              <h3>Arbeitszeiten</h3>
+              <p>Pro Wochentag eigene Zeiten — z. B. Mo 9:00–16:30, Di 10:00–13:00.</p>
+            </div>
+            <label class="switch-row">
+              <span>Nur in Arbeitszeiten tracken</span>
+              <input type="checkbox" id="work-hours-enabled" class="switch-input" />
+            </label>
+            <div id="work-week" class="work-week"></div>
+            <button id="save-work-hours-btn" class="btn secondary sheet-action">
+              Arbeitszeiten speichern
+            </button>
+            <p class="sheet-footnote" id="work-hours-status" aria-live="polite"></p>
+          </section>
+
+          <div class="separator" role="separator"></div>
+
+          <section class="sheet-group">
+            <div class="sheet-group-header">
+              <h3>Terminal</h3>
+              <p>Erfasst Projektordner und Git-Branch aus dem Fenstertitel.</p>
+            </div>
+            <button id="hook-btn" class="btn secondary sheet-action">
+              Terminal-Hook installieren
+            </button>
+            <p class="sheet-footnote" id="terminal-hook-status"></p>
+            <p class="sheet-footnote" id="capture-preview-status"></p>
+          </section>
+
+          <div class="separator" role="separator"></div>
+
+          <section class="sheet-group">
+            <div class="sheet-group-header">
+              <h3>Export</h3>
+              <p>Timeline für weitere Analysen als CSV oder JSON speichern.</p>
+            </div>
+            <div class="export-grid">
+              <button id="export-day-csv-btn" class="btn secondary">
+                Tag · CSV
+              </button>
+              <button id="export-day-json-btn" class="btn secondary">
+                Tag · JSON
+              </button>
+              <button id="export-all-csv-btn" class="btn secondary">
+                Alles · CSV
+              </button>
+              <button id="export-all-json-btn" class="btn secondary">
+                Alles · JSON
+              </button>
+            </div>
+          </section>
+
+          <div class="separator" role="separator"></div>
+
+          <section class="sheet-group sheet-group-danger">
+            <div class="sheet-group-header">
+              <h3>Daten</h3>
+              <p>Aktivitäten werden lokal gespeichert und nicht automatisch gelöscht.</p>
+            </div>
+            <div class="sheet-actions">
+              <button id="delete-day-btn" class="btn danger secondary">
+                Ausgewählten Tag löschen
+              </button>
+              <button id="delete-all-btn" class="btn danger">
+                Alle Daten löschen
+              </button>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <div id="update-overlay" class="overlay update-overlay hidden" aria-live="polite">
+      <div class="overlay-backdrop overlay-backdrop-static"></div>
       <div class="update-overlay-card">
         <strong id="update-overlay-title">Update</strong>
         <p id="update-overlay-message">Bitte warten…</p>

@@ -12,16 +12,30 @@ const permissionBannerHintEl = document.getElementById("permission-banner-hint")
 const pauseBtn = document.getElementById("pause-btn");
 const dayPickerEl = document.getElementById("day-picker");
 const workHoursEnabledEl = document.getElementById("work-hours-enabled");
-const workHoursStartEl = document.getElementById("work-hours-start");
-const workHoursEndEl = document.getElementById("work-hours-end");
 const workHoursStatusEl = document.getElementById("work-hours-status");
+const workWeekEl = document.getElementById("work-week");
+const saveWorkHoursBtnEl = document.getElementById("save-work-hours-btn");
+const terminalHookStatusEl = document.getElementById("terminal-hook-status");
+const capturePreviewStatusEl = document.getElementById("capture-preview-status");
+
+const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+const settingsOverlayEl = document.getElementById("settings-overlay");
+const settingsPanelEl = document.getElementById("settings-panel");
+const openSettingsBtnEl = document.getElementById("open-settings-btn");
+const settingsBodyEl = settingsPanelEl.querySelector(".sheet-body");
+const updateAvailableBannerEl = document.getElementById("update-available-banner");
+const updateAvailableVersionEl = document.getElementById("update-available-version");
 
 const REFRESH_INTERVAL_MS = 2000;
 const BUCKET_MINUTES = 15;
+const SAVE_FEEDBACK_MS = 2200;
 let refreshTimer = null;
+let scrollLockDepth = 0;
+let workHoursSaveFeedbackTimer = null;
 
 let selectedDateIso = isoToday();
 let trackingPaused = false;
+let latestTrackerStatus = null;
 let lastActivities = [];
 const expandedBuckets = new Set();
 
@@ -209,6 +223,7 @@ function buildBuckets(activities) {
           seconds: 0,
           is_idle: activity.is_idle,
           app_name: activity.app_name,
+          url: activity.url ?? null,
         };
         entry.seconds += seconds;
         breakdown.set(key, entry);
@@ -255,9 +270,39 @@ function renderBucketBar(items) {
         `<span class="bucket-bar-segment" style="flex-grow:${item.seconds}; background:${appColor(
           item.app_name,
           item.is_idle
-        )}" title="${escapeHtml(`${item.percent}% ${item.label}`)}"></span>`
+        )}"></span>`
     )
     .join("");
+}
+
+function renderBreakdownRow(item) {
+  const url = item.url?.trim();
+  const hasUrl = Boolean(url);
+  const rowClass = `breakdown-row${item.is_idle ? " idle" : ""}${hasUrl ? " has-url" : ""}`;
+  const urlBlock = hasUrl
+    ? `<span class="breakdown-url hidden" aria-hidden="true">${escapeHtml(url)}</span>`
+    : "";
+
+  if (hasUrl) {
+    return `
+      <button type="button" class="${rowClass}" aria-label="${escapeHtml(`${item.percent}% ${item.label}`)}" aria-expanded="false">
+        <span class="breakdown-dot" style="background:${appColor(item.app_name, item.is_idle)}"></span>
+        <span class="breakdown-label-wrap">
+          <span class="breakdown-label">${escapeHtml(`${item.percent}% ${item.label}`)}</span>
+          ${urlBlock}
+        </span>
+        <span class="breakdown-duration">${escapeHtml(formatDuration(item.seconds))}</span>
+      </button>
+    `;
+  }
+
+  return `
+    <div class="${rowClass}">
+      <span class="breakdown-dot" style="background:${appColor(item.app_name, item.is_idle)}"></span>
+      <span class="breakdown-label">${escapeHtml(`${item.percent}% ${item.label}`)}</span>
+      <span class="breakdown-duration">${escapeHtml(formatDuration(item.seconds))}</span>
+    </div>
+  `;
 }
 
 function renderBucketSummary(items, maxItems = 3) {
@@ -302,17 +347,7 @@ function renderBuckets(buckets) {
         <span class="bucket-chevron" aria-hidden="true"></span>
       </button>
       <div class="bucket-details">
-        ${bucket.items
-          .map(
-            (item) => `
-          <div class="breakdown-row${item.is_idle ? " idle" : ""}">
-            <span class="breakdown-dot" style="background:${appColor(item.app_name, item.is_idle)}"></span>
-            <span class="breakdown-label">${escapeHtml(`${item.percent}% ${item.label}`)}</span>
-            <span class="breakdown-duration">${escapeHtml(formatDuration(item.seconds))}</span>
-          </div>
-        `
-          )
-          .join("")}
+        ${bucket.items.map((item) => renderBreakdownRow(item)).join("")}
       </div>
     `;
 
@@ -325,6 +360,19 @@ function renderBuckets(buckets) {
       renderBuckets(buildBuckets(lastActivities));
     });
 
+    row.querySelectorAll(".breakdown-row.has-url").forEach((entry) => {
+      entry.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const showing = entry.classList.toggle("url-visible");
+        const urlEl = entry.querySelector(".breakdown-url");
+        if (urlEl) {
+          urlEl.classList.toggle("hidden", !showing);
+          urlEl.setAttribute("aria-hidden", showing ? "false" : "true");
+        }
+        entry.setAttribute("aria-expanded", showing ? "true" : "false");
+      });
+    });
+
     timelineEl.appendChild(row);
   }
 }
@@ -332,6 +380,137 @@ function renderBuckets(buckets) {
 function renderActivities(activities) {
   lastActivities = activities;
   renderBuckets(buildBuckets(activities));
+}
+
+function formatTerminalHookStatus(status) {
+  if (!status.hook_script_installed) {
+    return "Hook: Script fehlt — zuerst „Terminal-Hook installieren“ klicken.";
+  }
+  if (!status.shell_configured) {
+    return "Hook: ~/.zshrc enthält noch kein source ~/.timetrack/hook.sh — danach Terminal neu starten.";
+  }
+  if (!status.state_file_exists) {
+    return "Hook: In Terminal einmal Enter drücken — dann sollte ~/.timetrack/terminal-state.jsonl entstehen.";
+  }
+  if (!status.latest_branch && !status.latest_cwd) {
+    return "Hook: State-Datei vorhanden, aber noch ohne Branch/CWD — in einem Git-Repo arbeiten.";
+  }
+  const parts = [];
+  if (status.latest_cwd) {
+    parts.push(status.latest_cwd);
+  }
+  if (status.latest_branch) {
+    parts.push(`Branch: ${status.latest_branch}`);
+  }
+  return `Hook aktiv — zuletzt: ${parts.join(" · ")}. In der Timeline: „Terminal · Branch: …“.`;
+}
+
+function formatCapturePreview(preview) {
+  if (!preview.accessibility_trusted) {
+    return "Titles: Bedienungshilfen fehlen für diese App-Binary — gelber Banner oben beachten.";
+  }
+  if (!preview.window_title && !preview.url) {
+    return `Titles: Berechtigung da, aber kein Fenstertitel von „${preview.frontmost_app}“ — App neu starten.`;
+  }
+  if (preview.url) {
+    return `Titles OK — ${preview.frontmost_app}: ${preview.window_title || preview.url}`;
+  }
+  return `Titles OK — ${preview.frontmost_app}: ${preview.window_title}`;
+}
+
+async function refreshSettingsDiagnostics() {
+  const [hookStatus, capturePreview] = await Promise.all([
+    invoke("get_terminal_hook_status"),
+    invoke("get_capture_preview"),
+  ]);
+  terminalHookStatusEl.textContent = formatTerminalHookStatus(hookStatus);
+  capturePreviewStatusEl.textContent = formatCapturePreview(capturePreview);
+}
+
+function todayWeekdayIndex() {
+  return (new Date().getDay() + 6) % 7;
+}
+
+function renderWorkWeek(days) {
+  workWeekEl.innerHTML = WEEKDAYS.map((label, index) => {
+    const day = days[index] ?? { enabled: true, start: "09:00", end: "18:00" };
+    return `
+      <div class="work-day-row" data-weekday="${index}">
+        <label class="work-day-name">
+          <input
+            type="checkbox"
+            class="work-day-enabled"
+            ${day.enabled ? "checked" : ""}
+          />
+          <span>${label}</span>
+        </label>
+        <input type="time" class="work-day-start" value="${day.start}" />
+        <span class="work-day-sep" aria-hidden="true">–</span>
+        <input type="time" class="work-day-end" value="${day.end}" />
+      </div>
+    `;
+  }).join("");
+}
+
+function collectWorkWeek() {
+  return WEEKDAYS.map((_, index) => {
+    const row = workWeekEl.querySelector(`[data-weekday="${index}"]`);
+    return {
+      enabled: row.querySelector(".work-day-enabled").checked,
+      start: row.querySelector(".work-day-start").value,
+      end: row.querySelector(".work-day-end").value,
+    };
+  });
+}
+
+function formatWorkHoursStatus(status) {
+  if (!status.work_hours_enabled) {
+    return "Arbeitszeiten sind deaktiviert — es wird rund um die Uhr getrackt.";
+  }
+
+  const todayIndex = todayWeekdayIndex();
+  const todayName = WEEKDAYS[todayIndex];
+  const today = status.work_hours_week[todayIndex];
+
+  if (!today?.enabled) {
+    return `Heute (${todayName}): freier Tag — kein Tracking.`;
+  }
+
+  const windowLabel = `${today.start}–${today.end}`;
+  if (status.work_hours_active) {
+    return `Heute (${todayName}): ${windowLabel} — aktiv.`;
+  }
+  return `Heute (${todayName}): ${windowLabel} — außerhalb der Zeit.`;
+}
+
+function clearWorkHoursSaveFeedback() {
+  if (workHoursSaveFeedbackTimer) {
+    clearTimeout(workHoursSaveFeedbackTimer);
+    workHoursSaveFeedbackTimer = null;
+  }
+  workHoursStatusEl.classList.remove("is-success");
+  saveWorkHoursBtnEl.classList.remove("success");
+  saveWorkHoursBtnEl.disabled = false;
+  saveWorkHoursBtnEl.textContent = "Arbeitszeiten speichern";
+}
+
+function showWorkHoursSaveSuccess() {
+  clearWorkHoursSaveFeedback();
+  saveWorkHoursBtnEl.textContent = "Gespeichert";
+  saveWorkHoursBtnEl.classList.add("success");
+  workHoursStatusEl.textContent = "Arbeitszeiten gespeichert.";
+  workHoursStatusEl.classList.add("is-success");
+
+  workHoursSaveFeedbackTimer = setTimeout(() => {
+    workHoursStatusEl.classList.remove("is-success");
+    if (latestTrackerStatus) {
+      workHoursStatusEl.textContent = formatWorkHoursStatus(latestTrackerStatus);
+    }
+    saveWorkHoursBtnEl.classList.remove("success");
+    saveWorkHoursBtnEl.textContent = "Arbeitszeiten speichern";
+    saveWorkHoursBtnEl.disabled = false;
+    workHoursSaveFeedbackTimer = null;
+  }, SAVE_FEEDBACK_MS);
 }
 
 async function refresh() {
@@ -343,10 +522,12 @@ async function refresh() {
   renderActivities(activities);
   totalLabelEl.textContent = status.total_today_label;
   dayLabelEl.textContent = formatDayLabel(selectedDateIso);
+  latestTrackerStatus = status;
   trackingPaused = status.tracking_paused;
   pauseBtn.textContent = trackingPaused
     ? "Tracking fortsetzen"
     : "Tracking pausieren";
+  updateSettingsBadges(status);
 
   if (status.accessibility_granted) {
     permissionBannerEl.classList.add("hidden");
@@ -361,15 +542,12 @@ async function refresh() {
     }
   }
 
-  workHoursEnabledEl.checked = status.work_hours_enabled;
-  workHoursStartEl.value = status.work_hours_start;
-  workHoursEndEl.value = status.work_hours_end;
-  if (!status.work_hours_enabled) {
-    workHoursStatusEl.textContent = "Arbeitszeiten sind deaktiviert — es wird rund um die Uhr getrackt.";
-  } else if (status.work_hours_active) {
-    workHoursStatusEl.textContent = `Tracking aktiv (${status.work_hours_start}–${status.work_hours_end}).`;
-  } else {
-    workHoursStatusEl.textContent = `Außerhalb der Arbeitszeit (${status.work_hours_start}–${status.work_hours_end}) — pausiert.`;
+  if (settingsOverlayEl.classList.contains("hidden")) {
+    workHoursEnabledEl.checked = status.work_hours_enabled;
+    renderWorkWeek(status.work_hours_week);
+  }
+  if (!workHoursSaveFeedbackTimer) {
+    workHoursStatusEl.textContent = formatWorkHoursStatus(status);
   }
 }
 
@@ -396,8 +574,131 @@ document.getElementById("request-access-btn").addEventListener("click", async ()
   await refresh();
 });
 
-document.getElementById("open-settings-btn").addEventListener("click", async () => {
+document.getElementById("open-accessibility-settings-btn").addEventListener("click", async () => {
   await invoke("open_accessibility_settings_cmd");
+});
+
+function setScrollLocked(locked) {
+  if (locked) {
+    scrollLockDepth += 1;
+    if (scrollLockDepth === 1) {
+      document.documentElement.classList.add("scroll-locked");
+    }
+    return;
+  }
+
+  scrollLockDepth = Math.max(0, scrollLockDepth - 1);
+  if (scrollLockDepth === 0) {
+    document.documentElement.classList.remove("scroll-locked");
+  }
+}
+
+function trackingStatusKind(status) {
+  if (status.tracking_error) {
+    return "error";
+  }
+  if (
+    status.tracking_paused ||
+    (status.work_hours_enabled && !status.work_hours_active)
+  ) {
+    return "paused";
+  }
+  return "active";
+}
+
+function updateSettingsBadges(status) {
+  const kind = trackingStatusKind(status);
+  openSettingsBtnEl.classList.remove(
+    "status-dot-active",
+    "status-dot-paused",
+    "status-dot-error",
+    "has-update-dot"
+  );
+  openSettingsBtnEl.classList.add(`status-dot-${kind}`);
+
+  const trackingTitles = {
+    active: "Tracking aktiv",
+    paused: "Tracking pausiert",
+    error: status.tracking_error || "Tracking-Fehler",
+  };
+  let title = trackingTitles[kind];
+  let ariaLabel = "Einstellungen";
+
+  if (status.update_available) {
+    openSettingsBtnEl.classList.add("has-update-dot");
+    updateAvailableVersionEl.textContent = status.update_available;
+    updateAvailableBannerEl.classList.remove("hidden");
+    title += ` · Update ${status.update_available} verfügbar`;
+    ariaLabel = `Einstellungen, Update ${status.update_available} verfügbar`;
+  } else {
+    updateAvailableBannerEl.classList.add("hidden");
+  }
+
+  openSettingsBtnEl.title = title;
+  openSettingsBtnEl.setAttribute("aria-label", ariaLabel);
+}
+
+function openSettingsOverlay() {
+  settingsOverlayEl.classList.remove("hidden");
+  settingsOverlayEl.setAttribute("aria-hidden", "false");
+  setScrollLocked(true);
+  if (latestTrackerStatus) {
+    workHoursEnabledEl.checked = latestTrackerStatus.work_hours_enabled;
+    renderWorkWeek(latestTrackerStatus.work_hours_week);
+    workHoursStatusEl.textContent = formatWorkHoursStatus(latestTrackerStatus);
+  }
+  refreshSettingsDiagnostics().catch(() => {});
+  document.getElementById("close-settings-btn").focus();
+}
+
+function closeSettingsOverlay() {
+  if (settingsOverlayEl.classList.contains("hidden")) {
+    return;
+  }
+  settingsOverlayEl.classList.add("hidden");
+  settingsOverlayEl.setAttribute("aria-hidden", "true");
+  setScrollLocked(false);
+  openSettingsBtnEl.focus();
+}
+
+document.getElementById("open-settings-btn").addEventListener("click", openSettingsOverlay);
+document.getElementById("close-settings-btn").addEventListener("click", closeSettingsOverlay);
+document.getElementById("settings-backdrop").addEventListener("click", closeSettingsOverlay);
+
+document.getElementById("settings-backdrop").addEventListener(
+  "wheel",
+  (event) => {
+    event.preventDefault();
+  },
+  { passive: false }
+);
+
+settingsBodyEl.addEventListener(
+  "wheel",
+  (event) => {
+    event.stopPropagation();
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  "wheel",
+  (event) => {
+    if (scrollLockDepth === 0) {
+      return;
+    }
+    if (settingsBodyEl.contains(event.target)) {
+      return;
+    }
+    event.preventDefault();
+  },
+  { passive: false }
+);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !settingsOverlayEl.classList.contains("hidden")) {
+    closeSettingsOverlay();
+  }
 });
 
 pauseBtn.addEventListener("click", async () => {
@@ -406,17 +707,53 @@ pauseBtn.addEventListener("click", async () => {
 });
 
 document.getElementById("save-work-hours-btn").addEventListener("click", async () => {
-  await invoke("set_work_hours", {
-    enabled: workHoursEnabledEl.checked,
-    start: workHoursStartEl.value,
-    end: workHoursEndEl.value,
-  });
-  await refresh();
+  clearWorkHoursSaveFeedback();
+  saveWorkHoursBtnEl.disabled = true;
+  saveWorkHoursBtnEl.textContent = "Speichern…";
+
+  try {
+    await invoke("set_work_schedule", {
+      enabled: workHoursEnabledEl.checked,
+      days: collectWorkWeek(),
+    });
+    await refresh();
+    showWorkHoursSaveSuccess();
+  } catch (err) {
+    clearWorkHoursSaveFeedback();
+    alert(`Arbeitszeiten konnten nicht gespeichert werden: ${err}`);
+  }
+});
+
+async function exportActivities(format, scope) {
+  try {
+    const message = await invoke("export_activities", {
+      format,
+      scope,
+      day: scope === "day" ? selectedDateIso : null,
+    });
+    alert(message);
+  } catch (err) {
+    alert(`Export fehlgeschlagen: ${err}`);
+  }
+}
+
+document.getElementById("export-day-csv-btn").addEventListener("click", () => {
+  exportActivities("csv", "day");
+});
+document.getElementById("export-day-json-btn").addEventListener("click", () => {
+  exportActivities("json", "day");
+});
+document.getElementById("export-all-csv-btn").addEventListener("click", () => {
+  exportActivities("csv", "all");
+});
+document.getElementById("export-all-json-btn").addEventListener("click", () => {
+  exportActivities("json", "all");
 });
 
 document.getElementById("hook-btn").addEventListener("click", async () => {
   const message = await invoke("install_terminal_hook");
   alert(message);
+  await refreshSettingsDiagnostics();
 });
 
 const updateOverlayEl = document.getElementById("update-overlay");
@@ -435,10 +772,16 @@ function showUpdateOverlay(title, message, progress = null) {
     updateOverlayProgressEl.value = progress;
   }
   updateOverlayEl.classList.remove("hidden");
+  setScrollLocked(true);
+  closeSettingsOverlay();
 }
 
 function hideUpdateOverlay() {
+  if (updateOverlayEl.classList.contains("hidden")) {
+    return;
+  }
   updateOverlayEl.classList.add("hidden");
+  setScrollLocked(false);
 }
 
 listen("update-progress", ({ payload }) => {
@@ -500,6 +843,16 @@ async function checkForUpdates() {
     alert(`Update fehlgeschlagen: ${err}`);
   }
 }
+
+document.getElementById("install-update-btn").addEventListener("click", () => {
+  checkForUpdates();
+});
+
+listen("update-available-changed", () => {
+  if (!document.hidden) {
+    refresh();
+  }
+});
 
 listen("timeline-changed", () => {
   if (!document.hidden) {

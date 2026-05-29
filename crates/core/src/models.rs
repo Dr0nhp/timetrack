@@ -1,4 +1,4 @@
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,33 +98,28 @@ impl Activity {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkHoursSettings {
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DayWorkHours {
     pub enabled: bool,
-    /// Minutes since midnight in local time, inclusive start.
     pub start_minutes: u16,
-    /// Minutes since midnight in local time, exclusive end.
     pub end_minutes: u16,
 }
 
-impl Default for WorkHoursSettings {
+impl Default for DayWorkHours {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             start_minutes: 9 * 60,
             end_minutes: 18 * 60,
         }
     }
 }
 
-impl WorkHoursSettings {
-    pub fn is_active_now(&self) -> bool {
+impl DayWorkHours {
+    pub fn is_active_at(&self, minutes: u16) -> bool {
         if !self.enabled {
-            return true;
+            return false;
         }
-
-        let now = chrono::Local::now().time();
-        let minutes = now.hour() as u16 * 60 + now.minute() as u16;
 
         if self.start_minutes <= self.end_minutes {
             minutes >= self.start_minutes && minutes < self.end_minutes
@@ -133,12 +128,108 @@ impl WorkHoursSettings {
         }
     }
 
-    pub fn start_label(&self) -> String {
-        format_minutes(self.start_minutes)
+    pub fn schedule_label(&self) -> String {
+        if !self.enabled {
+            return "Frei".into();
+        }
+        format!(
+            "{}–{}",
+            format_minutes(self.start_minutes),
+            format_minutes(self.end_minutes)
+        )
+    }
+}
+
+fn default_week_days() -> [DayWorkHours; 7] {
+    std::array::from_fn(|index| DayWorkHours {
+        enabled: index < 5,
+        ..DayWorkHours::default()
+    })
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct WorkHoursSettings {
+    pub enabled: bool,
+    pub days: [DayWorkHours; 7],
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum WorkHoursSettingsRaw {
+    Weekly {
+        enabled: bool,
+        days: [DayWorkHours; 7],
+    },
+    Legacy {
+        enabled: bool,
+        start_minutes: u16,
+        end_minutes: u16,
+    },
+}
+
+impl<'de> Deserialize<'de> for WorkHoursSettings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        WorkHoursSettingsRaw::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl From<WorkHoursSettingsRaw> for WorkHoursSettings {
+    fn from(raw: WorkHoursSettingsRaw) -> Self {
+        match raw {
+            WorkHoursSettingsRaw::Weekly { enabled, days } => Self { enabled, days },
+            WorkHoursSettingsRaw::Legacy {
+                enabled,
+                start_minutes,
+                end_minutes,
+            } => {
+                let day = DayWorkHours {
+                    enabled: true,
+                    start_minutes,
+                    end_minutes,
+                };
+                Self {
+                    enabled,
+                    days: std::array::from_fn(|_| day.clone()),
+                }
+            }
+        }
+    }
+}
+
+impl Default for WorkHoursSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            days: default_week_days(),
+        }
+    }
+}
+
+impl WorkHoursSettings {
+    fn weekday_index(weekday: chrono::Weekday) -> usize {
+        weekday.num_days_from_monday() as usize
     }
 
-    pub fn end_label(&self) -> String {
-        format_minutes(self.end_minutes)
+    pub fn today_schedule(&self) -> &DayWorkHours {
+        &self.days[Self::weekday_index(chrono::Local::now().weekday())]
+    }
+
+    pub fn is_active_now(&self) -> bool {
+        if !self.enabled {
+            return true;
+        }
+
+        let now = chrono::Local::now();
+        let day = &self.days[Self::weekday_index(now.weekday())];
+        let minutes = now.time().hour() as u16 * 60 + now.time().minute() as u16;
+        day.is_active_at(minutes)
+    }
+
+    pub fn today_label(&self) -> String {
+        self.today_schedule().schedule_label()
     }
 }
 
@@ -228,5 +319,28 @@ mod tests {
         assert_eq!(settings.idle_timeout_secs, 300);
         assert_eq!(settings.poll_interval_ms, 1500);
         assert!(!settings.tracking_paused);
+        assert!(!settings.work_hours.days[5].enabled);
+        assert!(settings.work_hours.days[0].enabled);
+    }
+
+    #[test]
+    fn day_work_hours_respects_enabled_flag() {
+        let day = DayWorkHours {
+            enabled: false,
+            start_minutes: 9 * 60,
+            end_minutes: 18 * 60,
+        };
+        assert!(!day.is_active_at(10 * 60));
+    }
+
+    #[test]
+    fn legacy_work_hours_deserialize_to_weekly() {
+        let raw: WorkHoursSettings = serde_json::from_str(
+            r#"{"enabled":true,"start_minutes":540,"end_minutes":990}"#,
+        )
+        .unwrap();
+        assert!(raw.enabled);
+        assert_eq!(raw.days[0].start_minutes, 540);
+        assert_eq!(raw.days[6].end_minutes, 990);
     }
 }
